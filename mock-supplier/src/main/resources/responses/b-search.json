@@ -1,0 +1,24 @@
+{
+  "resultCode": "0000",
+  "resultMessage": "SUCCESS",
+  "data": {
+    "items": [
+      {
+        "propertyId": "B77120",
+        "propertyName": "Riverside Hotel Seoul",
+        "roomId": "R-401",
+        "roomName": "Deluxe Twin Room",
+        "maxOccupancy": 2,
+        "breakfastIncluded": true,
+        "currency": "KRW",
+        "totalPrice": 452000,
+        "taxIncluded": true,
+        "inventory": [
+          { "date": "2026-09-01", "remainingRooms": 3 },
+          { "date": "2026-09-02", "remainingRooms": 1 },
+          { "date": "2026-09-03", "remainingRooms": 5 }
+        ]
+      }
+    ]
+  }
+}

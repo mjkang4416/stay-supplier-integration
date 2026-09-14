@@ -1,0 +1,32 @@
+{
+  "items": [
+    {
+      "hotelCode": "A-10023",
+      "hotelName": "Riverside Hotel Seoul",
+      "roomTypeCode": "DLX-TWN",
+      "roomTypeName": "Deluxe Twin",
+      "maxOccupancy": 2,
+      "breakfastIncluded": false,
+      "currency": "KRW",
+      "dailyRates": [
+        { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 120000, "taxAmount": 12000 },
+        { "date": "2026-09-02", "remainingRooms": 1, "nightlyRate": 150000, "taxAmount": 15000 },
+        { "date": "2026-09-03", "remainingRooms": 5, "nightlyRate": 120000, "taxAmount": 12000 }
+      ]
+    },
+    {
+      "hotelCode": "A-10044",
+      "hotelName": "Namsan Garden Stay",
+      "roomTypeCode": "STD-DBL",
+      "roomTypeName": "Standard Double",
+      "maxOccupancy": 2,
+      "breakfastIncluded": false,
+      "currency": "KRW",
+      "dailyRates": [
+        { "date": "2026-09-01", "remainingRooms": 2, "nightlyRate": 88000, "taxAmount": 8800 },
+        { "date": "2026-09-02", "remainingRooms": 0, "nightlyRate": 99000, "taxAmount": 9900 },
+        { "date": "2026-09-03", "remainingRooms": 4, "nightlyRate": 88000, "taxAmount": 8800 }
+      ]
+    }
+  ]
+}

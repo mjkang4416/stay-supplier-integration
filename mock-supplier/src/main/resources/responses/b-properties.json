@@ -1,0 +1,15 @@
+{
+  "resultCode": "0000",
+  "resultMessage": "SUCCESS",
+  "data": {
+    "items": [
+      {
+        "propertyId": "B77120",
+        "propertyName": "Riverside Hotel Seoul",
+        "rooms": [
+          { "roomId": "R-401", "roomName": "Deluxe Twin Room", "maxOccupancy": 2 }
+        ]
+      }
+    ]
+  }
+}

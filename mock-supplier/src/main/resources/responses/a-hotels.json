@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "hotelCode": "A-10023",
+      "hotelName": "Riverside Hotel Seoul",
+      "roomTypes": [
+        { "roomTypeCode": "DLX-TWN", "roomTypeName": "Deluxe Twin", "maxOccupancy": 2 }
+      ]
+    },
+    {
+      "hotelCode": "A-10044",
+      "hotelName": "Namsan Garden Stay",
+      "roomTypes": [
+        { "roomTypeCode": "STD-DBL", "roomTypeName": "Standard Double", "maxOccupancy": 2 }
+      ]
+    }
+  ]
+}

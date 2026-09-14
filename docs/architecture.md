@@ -6,7 +6,19 @@
 <!-- 구성도: 클라이언트 → 애플리케이션 → MySQL, Mock Supplier(A·B). 모듈, 포트, 호출 방향 -->
 
 ## 2. 모듈·패키지 구조
-<!-- 모듈 목록과 패키지별 책임, 패키지 간 의존 방향 -->
+
+### 2.1 모듈
+
+| 모듈 | 역할 | 포트 | 진입점 |
+|---|---|---|---|
+| 루트 (`:`) | 본 애플리케이션. 매핑, 어댑터, 통합 검색 API | 8080 | `StaySupplierIntegrationApplication` |
+| `:mock-supplier` | 공급사 A·B를 흉내 내는 Mock 서버 | 9090 | `MockSupplierApplication` |
+
+- 두 모듈은 서로 코드를 참조하지 않는다. Mock은 외부 시스템을 흉내 내는 것이므로 본 앱의 DTO를 공유하지 않는다.
+- 한 저장소에 두는 이유는 같이 빌드·관리하고 평가자가 한 번에 받기 위해서다. 실행 시점에는 별개 프로세스다.
+
+### 2.2 패키지
+<!-- 본 앱 패키지별 책임과 의존 방향 (구조 확정 후 기입) -->
 
 ## 3. 유스케이스와 핵심 흐름
 
@@ -88,7 +100,43 @@
 <!-- Supplier별 성공률, 응답 지연, 타임아웃 비율을 어디서 측정해 어떻게 노출하는지. 설계만 한 경우 "구현 상태: 설계만" 표시 -->
 
 ## 5. Mock Supplier
-<!-- 실행 방법, 포트, 엔드포인트 목록, 모드 전환(정상 / 장애 / 무응답) 명령 -->
+
+공급사 A·B의 API를 흉내 내는 별도 모듈. 채점 대상이 아니라 연동 동작을 검증하는 수단이므로 최소로 구현한다.
+
+### 5.1 실행
+```bash
+./gradlew :mock-supplier:bootRun   # 포트 9090
+```
+
+### 5.2 엔드포인트
+
+| 엔드포인트 | 역할 | 모드 적용 |
+|---|---|---|
+| `GET /a/v1/hotels` | Supplier A 숙소 목록 | 없음 |
+| `GET /a/v1/availability?hotelCodes=...` | Supplier A 재고·요금 | 있음 |
+| `GET /b/api/properties` | Supplier B 숙소 목록 | 없음 |
+| `GET /b/api/search?propertyIds=...` | Supplier B 재고·요금 | 있음 |
+| `POST /control/{a\|b}/mode?value=...` | 공급사별 모드 전환 | - |
+
+- 응답 본문은 `src/main/resources/responses/*.json`의 고정 데이터이며 요청 파라미터는 무시한다.
+- 요청 파라미터 필터링, 요청당 숙소 수 상한 초과 오류, 응답 지연 모드, 숙소 목록 API 장애 모드는 필요해지면 추가한다.
+
+### 5.3 모드
+
+| 모드 | Supplier A 재고·요금 응답 | Supplier B 재고·요금 응답 |
+|---|---|---|
+| `normal` (기본) | HTTP 200 + 정상 본문 | HTTP 200 + `resultCode: "0000"` |
+| `error` | HTTP 503 + `{"error":"SERVICE_UNAVAILABLE"}` | HTTP 200 + `{"resultCode":"E503","data":null}` |
+| `no-response` | 응답을 보내지 않고 10분 대기 | 같음 |
+
+```bash
+curl -X POST 'http://localhost:9090/control/a/mode?value=error'         # A 장애
+curl -X POST 'http://localhost:9090/control/b/mode?value=no-response'   # B 무응답
+curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # A 복구
+```
+
+### 5.4 구성 방식 선택
+별도 모듈로 둔다. WireMock 독립 실행은 코드가 없는 대신 매핑 문법과 시나리오 상태 API를 익혀야 하고 공급사별 모드 전환이 복잡하다. 본 앱 안의 테스트용 컨트롤러는 같은 프로세스에서 자기 자신을 호출해 스레드가 묶이고, 분리하려면 앱을 두 번 띄우면서 본 앱 로직을 꺼야 한다. 자동 테스트에서는 이 모듈에 의존하지 않고 WireMock을 테스트 안에서 띄운다 (7장).
 
 ## 6. 로컬 실행 구성
 <!-- MySQL은 Docker, Mock은 별도 프로세스, 애플리케이션은 로컬 실행. 서버 Docker화는 하지 않음 -->

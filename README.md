@@ -94,13 +94,15 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 - Docker (로컬 MySQL 8.4 실행)
 
 ### 실행
+터미널 세 개가 필요하다. MySQL은 Docker로, Mock Supplier와 애플리케이션은 각각 로컬 프로세스로 띄운다.
 ```bash
-docker compose up -d # MySQL 실행
-./gradlew build      # 컴파일 + 테스트
-./gradlew bootRun    # 애플리케이션 실행 (포트 8080)
+docker compose up -d                 # 1. MySQL (Docker)
+./gradlew :mock-supplier:bootRun     # 2. Mock Supplier (포트 9090)
+./gradlew bootRun                    # 3. 애플리케이션 (포트 8080)
 ```
-- Mock Supplier 실행: <!-- Mock 구성 확정 후 기입 -->
+- `./gradlew build`: 컴파일 + 테스트
 - API 문서(Swagger UI): http://localhost:8080/swagger-ui.html
+- Mock Supplier 상세: [architecture.md 5장](docs/architecture.md)
 
 ### 로컬 MySQL
 
@@ -115,7 +117,12 @@ docker compose up -d # MySQL 실행
 | 데이터 | `mysql-data` 볼륨에 유지, 초기화는 `docker compose down -v` |
 
 ### 동작 확인
-<!-- 검색 API 호출 예시, Mock 장애 모드 전환 후 부분 실패 확인 방법 -->
+<!-- 검색 API 구현 후 기입: 정상 검색 → A 장애 전환 → 부분 실패 확인 → A 무응답 전환 → 타임아웃 확인 -->
+```bash
+curl -X POST 'http://localhost:9090/control/a/mode?value=error'         # Supplier A 장애
+curl -X POST 'http://localhost:9090/control/a/mode?value=no-response'   # Supplier A 무응답
+curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # 복구
+```
 
 ## 4. 구현 범위
 
