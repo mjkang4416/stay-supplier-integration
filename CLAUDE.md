@@ -1,0 +1,77 @@
+# CLAUDE.md
+
+이 저장소에서 작업할 때 따르는 개발 지침이다.
+
+## 명령
+
+### 환경
+- JDK 21: mise로 관리한다 (`mise install`, 버전은 `mise.toml`에 고정).
+- 빌드 도구: Gradle Wrapper (`./gradlew`).
+- Docker: 로컬 MySQL 실행에 사용한다 (`compose.yaml`).
+
+### 빌드·실행
+- `docker compose up -d` - MySQL 실행 (애플리케이션 실행 전에 필요)
+- `docker compose down` - MySQL 종료 (데이터는 `mysql-data` 볼륨에 유지)
+- `docker compose down -v` - MySQL 종료 + 데이터 삭제
+- 3306 포트가 이미 사용 중이면 `MYSQL_PORT=3307 docker compose up -d`, 애플리케이션은 `DB_PORT=3307`로 실행
+- `./gradlew build` - 컴파일과 전체 테스트
+- `./gradlew bootRun` - 애플리케이션 실행 (기본 포트 8080)
+- Mock Supplier 실행 - Mock 구성 확정 후 기입 (애플리케이션과 다른 포트 사용)
+
+### 테스트
+- `./gradlew test` - 전체 테스트
+- `./gradlew test --tests "클래스명"` - 특정 테스트 클래스만 실행
+
+### API 문서
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+
+## 아키텍처 개요
+
+여러 외부 숙박 공급사(Supplier)의 상품을 자사 표준 숙박 상품 모델로 통합하고, 통합 검색 API로 제공하는 연동 백엔드다.
+
+### 핵심 흐름
+1. [사전] 공급사 숙소 목록을 조회해 자사 숙소·객실 타입 식별자와의 매핑을 저장한다.
+2. 검색 요청(날짜·인원)이 오면 보유 숙소를 공급사별 코드로 묶는다.
+3. WebClient로 공급사 재고·요금 API를 병렬 조회한다.
+4. 각 응답을 표준 모델로 정규화하고, 일부 공급사가 실패해도 나머지 결과를 병합해 반환한다.
+
+### 기술 스택
+- Java 21, Spring Boot 4.0.8, Gradle (Kotlin DSL)
+- Spring MVC, WebClient (공급사 호출)
+- MyBatis, MySQL 8.4
+- SpringDoc OpenAPI
+
+### 디렉토리 구조
+- 패키지 구조 확정 후 기입
+
+## Docs (작업·디버깅 전에 해당 문서를 읽을 것)
+
+`docs/`에 주제별 설계 문서가 있다. 섹션 제목의 태그(`[개발]`, `[테스트]`, `[설계]`)를 보고 필요한 섹션만 읽는다.
+
+| 작업 대상 | 문서 |
+|-----------|------|
+| 전체 구성, 계층 경계, 기술 선택 | `docs/architecture.md` |
+| 표준 숙박 상품 모델, 공급사 코드 ↔ 내부 식별자 매핑 | `docs/stay-model.md` |
+| 공급사 어댑터, 실패 판정, 타임아웃, 부분 실패 | `docs/supplier-integration.md` |
+| 통합 검색 API 명세와 조회·병합 로직 | `docs/stay-search-api.md` |
+| Mock Supplier 실행, 모드 전환, 장애 재현 | `docs/mock-supplier.md` |
+
+설계 의사결정 요약은 `README.md`, 진행 기록과 AI 활용 기록은 `JOURNAL.md`에 있다.
+
+## 코드 규칙
+
+### 연동
+- 공급사 API 호출에는 WebClient만 사용한다. RestTemplate, RestClient는 사용하지 않는다.
+- 공급사별 요청/응답 DTO는 어댑터 패키지 밖으로 노출하지 않는다. 어댑터 밖에서는 표준 모델만 사용한다.
+- 실제 외부 서비스는 호출하지 않는다. 공급사 호출 대상은 Mock Supplier뿐이다.
+
+### 저장소
+- DB에는 공급사 코드 ↔ 내부 식별자 매핑만 저장한다. 요금과 재고는 저장하지 않는다.
+- MyBatis 매퍼 작성 방식(XML / 애너테이션)은 확정 후 기입한다.
+
+### 문서
+- 설계를 바꾸면 해당 `docs/` 문서의 "6. 설계 결정" 섹션과 `README.md`의 설계 의사결정 요약을 함께 고친다.
+- 문서에는 실제 코드에 반영된 내용만 적는다. 설계만 한 항목은 "구현 상태: 설계만"으로 표시한다.
+
+### 커밋
+- 의미 있는 작은 단위로 자주 커밋한다.
