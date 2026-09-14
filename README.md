@@ -1,9 +1,34 @@
 # stay-supplier-integration
 
-## 문제 요약
-<!-- 본인 말로 3~5줄: 어떤 문제를 풀고, 무엇을 만들었는지 -->
+## 1. 한눈에 보기
 
-## 빌드·실행
+### 배경과 문제
+<!-- 본인 말로 3~5줄: 공급사마다 같은 숙박 상품을 다르게 표현해서 그대로 노출할 수 없는 문제 -->
+
+### 목표 / 비목표
+| 목표 | 비목표 |
+|---|---|
+| <!-- 반드시 동작해야 하는 것 --> | <!-- 이번에 다루지 않는 것 --> |
+
+### 핵심 흐름
+1. [사전] 공급사 숙소 목록을 조회해 자사 숙소·객실 타입 식별자와의 매핑을 저장한다.
+2. 검색 요청(날짜·인원)이 오면 보유 숙소를 공급사별 코드로 묶는다.
+3. 공급사 재고·요금 API를 병렬 조회한다.
+4. 각 응답을 표준 모델로 정규화하고, 일부 공급사가 실패해도 나머지 결과를 병합해 반환한다.
+
+### 핵심 결정 요약
+| 결정 | 선택 | 한 줄 근거 |
+|---|---|---|
+| 표준 모델 (살린 정보·버린 정보) | | |
+| 요금 기준 | | |
+| 매핑 생성 시점 | | |
+| 연박 예약 가능 객실 수 판정 | | |
+| 예약 불가 상품 처리 | | |
+| 부분 실패 표현 | | |
+| 타임아웃 | | |
+| Spring MVC + WebClient vs WebFlux | | |
+
+## 2. 빌드·실행
 
 ### 요구 사항
 - JDK 21 (`mise install`로 설치할 수 있다. 버전은 `mise.toml`에 고정)
@@ -33,36 +58,85 @@ docker compose up -d # MySQL 실행
 ### 동작 확인
 <!-- 검색 API 호출 예시, Mock 장애 모드 전환 후 부분 실패 확인 방법 -->
 
-## 구현 범위
+## 3. 구현 범위
 
 | 항목 | 상태 | 문서 |
 |---|---|---|
 | 표준 숙박 상품 모델·매핑 저장 | 진행 전 | [stay-model.md](docs/stay-model.md) |
-| Supplier 연동 어댑터 | 진행 전 | [supplier-integration.md](docs/supplier-integration.md) |
+| Supplier 연동 어댑터 | 진행 전 | [architecture.md](docs/architecture.md) |
 | 통합 검색 API | 진행 전 | [stay-search-api.md](docs/stay-search-api.md) |
-| 연동 견고성 (타임아웃·부분 실패·실패 판정 통일) | 진행 전 | [supplier-integration.md](docs/supplier-integration.md) |
-| Mock Supplier | 진행 전 | [mock-supplier.md](docs/mock-supplier.md) |
-<!-- 선택 구현은 진행한 항목만 추가: 상태는 구현 / 설계만 / 미구현 -->
+| 연동 견고성 (타임아웃·부분 실패·실패 판정 통일) | 진행 전 | [architecture.md](docs/architecture.md) |
+| Mock Supplier | 진행 전 | [architecture.md](docs/architecture.md) |
+| 연동 지표·모니터링 설계 (권장) | 진행 전 | [architecture.md](docs/architecture.md) |
+| 재시도·서킷 브레이커 (선택, Resilience4j) | 진행 전 | [architecture.md](docs/architecture.md) |
+<!-- 그 밖의 선택 구현은 진행한 항목만 추가: 상태는 구현 / 설계만 / 미구현 -->
 
-## 설계 의사결정 요약
+## 4. 설계 의사결정과 근거
 
-| 결정 | 선택 | 근거 | 자세히 |
-|---|---|---|---|
-| 내부 표준으로 삼은 정보와 버린 정보 | | | [stay-model.md](docs/stay-model.md) |
-| 요금 필드 구성 | | | [stay-model.md](docs/stay-model.md) |
-| 매핑 생성 시점 | | | [stay-model.md](docs/stay-model.md) |
-| 연박 예약 가능 객실 수 판정 | | | [stay-search-api.md](docs/stay-search-api.md) |
-| 예약 불가 상품 노출 방식 | | | [stay-search-api.md](docs/stay-search-api.md) |
-| 부분 실패 표현 방식 | | | [stay-search-api.md](docs/stay-search-api.md) |
-| 대량 숙소 조회 처리 | | | [stay-search-api.md](docs/stay-search-api.md) |
-| 타임아웃 값 | | | [supplier-integration.md](docs/supplier-integration.md) |
-| 신규 Supplier 추가 시 수정 범위 | | | [supplier-integration.md](docs/supplier-integration.md) |
-| Spring MVC + WebClient vs WebFlux | | | [architecture.md](docs/architecture.md) |
+> 결정마다 선택, 근거, 잃는 것을 적는다. 선택지 비교와 폐기한 대안은 [JOURNAL.md](JOURNAL.md)의 "설계 의사결정 기록"에 있다.
 
-## 문서
-- [docs/architecture.md](docs/architecture.md): 전체 구성과 기술 선택
-- [docs/stay-model.md](docs/stay-model.md): 표준 모델과 매핑
-- [docs/supplier-integration.md](docs/supplier-integration.md): 공급사 연동과 견고성
-- [docs/stay-search-api.md](docs/stay-search-api.md): 통합 검색 API
-- [docs/mock-supplier.md](docs/mock-supplier.md): Mock Supplier
-- [JOURNAL.md](JOURNAL.md): 진행 기록과 AI 활용 기록
+### 4.1 표준 숙박 상품 모델
+<!-- 숙소·객실 타입·요금·재고를 각각 어떤 단위로 잡았는지 -->
+
+#### 살린 정보와 버린 정보
+| 정보 | Supplier A | Supplier B | 표준 모델 | 비고 |
+|---|---|---|---|---|
+
+#### 요금 기준
+<!-- 선택 / 근거 / 잃는 것 -->
+
+#### 재고 표현
+<!-- 선택 / 근거 / 잃는 것 -->
+
+### 4.2 매핑
+
+#### 생성 시점과 실패 처리
+<!-- 선택 / 근거 / 잃는 것 -->
+
+#### 내부 식별자 안정성
+<!-- 선택 / 근거 / 잃는 것 -->
+
+### 4.3 Supplier 어댑터
+
+#### 반환 형태와 실패 판정
+<!-- 선택 / 근거 / 잃는 것 -->
+
+#### 신규 Supplier 추가 시 수정 범위
+<!-- 무엇을 추가하고 무엇은 건드리지 않는지 -->
+
+### 4.4 통합 검색 API
+
+#### 연박 예약 가능 객실 수 판정
+<!-- 선택 / 근거 / 잃는 것 -->
+
+#### 예약 불가 상품 처리
+<!-- 응답에서 제외 / 0으로 노출 중 선택과 이유 -->
+
+#### 부분 실패 표현
+<!-- 선택 / 근거 / 잃는 것 -->
+
+#### 대량 숙소 조회
+<!-- 요청당 숙소 코드 수 제한과 숙소가 수천 개일 때의 처리 -->
+
+### 4.5 연동 견고성
+
+#### 타임아웃
+<!-- 연결·응답 타임아웃 값과 근거 -->
+
+### 4.6 기술 선택
+
+#### Spring MVC + WebClient vs WebFlux
+<!-- 선택 / 근거 / 잃는 것 -->
+
+#### 모듈·패키지 구조
+<!-- 선택 / 근거 / 잃는 것 -->
+
+## 5. 한계와 향후 개선
+<!-- 알려진 한계, 설계만 하고 구현하지 않은 것, 시간이 더 있다면 할 일 -->
+
+## 6. 문서
+- [docs/architecture.md](docs/architecture.md): 아키텍처 (전체 구성, 공급사 연동, Mock Supplier)
+- [docs/stay-model.md](docs/stay-model.md): 통합 모델 설계 (표준 모델, 공급사 필드 대응, 매핑)
+- [docs/stay-search-api.md](docs/stay-search-api.md): API 명세
+- [docs/domain-research.md](docs/domain-research.md): 도메인 리서치 원페이저 (공급사 구조, 공급사 간 표현 차이)
+- [JOURNAL.md](JOURNAL.md): 설계 의사결정 기록, 진행 기록, 테스트 전략과 결과, AI 활용 기록
