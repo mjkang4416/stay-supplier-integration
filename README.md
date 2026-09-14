@@ -28,7 +28,31 @@
 | 타임아웃 | | |
 | Spring MVC + WebClient vs WebFlux | | |
 
-## 2. 빌드·실행
+## 2. 저장소 구조
+
+```
+stay-supplier-integration/          # Gradle 멀티 모듈 루트
+├── README.md                       # 결론: 문제 → 구현 항목 → 흐름 → 결정, 빌드·실행, 구현 범위
+├── JOURNAL.md                      # 과정: 설계 의사결정 기록, 일자별 진행, 테스트, AI 활용
+├── CLAUDE.md                       # 개발 지침 (명령, 개요, docs 라우팅, 코드 규칙)
+├── docs/                           # 공식 명세
+│   ├── architecture.md             #   전체 구성, 유스케이스, 공급사 연동, Mock, 테스트 구성
+│   ├── stay-model.md               #   표준 숙박 상품 모델, 공급사 필드 대응, 매핑
+│   ├── stay-search-api.md          #   통합 검색 API 명세
+│   └── domain-research.md          #   도메인 리서치 원페이저
+├── build.gradle.kts                # 본 앱 빌드
+├── settings.gradle.kts             # 모듈 등록
+├── mise.toml                       # JDK 21 고정
+├── compose.yaml                    # 로컬 MySQL 8.4
+├── docker/mysql/conf.d/my.cnf      # MySQL 설정 (utf8mb4, UTC)
+├── src/                            # 본 애플리케이션 (:8080)
+└── mock-supplier/                  # Mock Supplier (:9090). 본 앱과 코드 참조 없음
+    └── src/main/resources/responses/   # 공급사 A·B 정상 응답 JSON
+```
+
+패키지 구조는 [architecture.md 2장](docs/architecture.md)에 있다.
+
+## 3. 빌드·실행
 
 ### 요구 사항
 - JDK 21 (`mise install`로 설치할 수 있다. 버전은 `mise.toml`에 고정)
@@ -58,7 +82,7 @@ docker compose up -d # MySQL 실행
 ### 동작 확인
 <!-- 검색 API 호출 예시, Mock 장애 모드 전환 후 부분 실패 확인 방법 -->
 
-## 3. 구현 범위
+## 4. 구현 범위
 
 | 항목 | 상태 | 문서 |
 |---|---|---|
@@ -71,11 +95,11 @@ docker compose up -d # MySQL 실행
 | 재시도·서킷 브레이커 (선택, Resilience4j) | 진행 전 | [architecture.md](docs/architecture.md) |
 <!-- 그 밖의 선택 구현은 진행한 항목만 추가: 상태는 구현 / 설계만 / 미구현 -->
 
-## 4. 설계 의사결정과 근거
+## 5. 설계 의사결정과 근거
 
 > 결정마다 선택, 근거, 잃는 것을 적는다. 선택지 비교와 폐기한 대안은 [JOURNAL.md](JOURNAL.md)의 "설계 의사결정 기록"에 있다.
 
-### 4.1 표준 숙박 상품 모델
+### 5.1 표준 숙박 상품 모델
 <!-- 숙소·객실 타입·요금·재고를 각각 어떤 단위로 잡았는지 -->
 
 #### 살린 정보와 버린 정보
@@ -88,7 +112,7 @@ docker compose up -d # MySQL 실행
 #### 재고 표현
 <!-- 선택 / 근거 / 잃는 것 -->
 
-### 4.2 매핑
+### 5.2 매핑
 
 #### 생성 시점과 실패 처리
 <!-- 선택 / 근거 / 잃는 것 -->
@@ -96,7 +120,7 @@ docker compose up -d # MySQL 실행
 #### 내부 식별자 안정성
 <!-- 선택 / 근거 / 잃는 것 -->
 
-### 4.3 Supplier 어댑터
+### 5.3 Supplier 어댑터
 
 #### 반환 형태와 실패 판정
 <!-- 선택 / 근거 / 잃는 것 -->
@@ -104,7 +128,7 @@ docker compose up -d # MySQL 실행
 #### 신규 Supplier 추가 시 수정 범위
 <!-- 무엇을 추가하고 무엇은 건드리지 않는지 -->
 
-### 4.4 통합 검색 API
+### 5.4 통합 검색 API
 
 #### 연박 예약 가능 객실 수 판정
 <!-- 선택 / 근거 / 잃는 것 -->
@@ -118,12 +142,12 @@ docker compose up -d # MySQL 실행
 #### 대량 숙소 조회
 <!-- 요청당 숙소 코드 수 제한과 숙소가 수천 개일 때의 처리 -->
 
-### 4.5 연동 견고성
+### 5.5 연동 견고성
 
 #### 타임아웃
 <!-- 연결·응답 타임아웃 값과 근거 -->
 
-### 4.6 기술 선택
+### 5.6 기술 선택
 
 #### Spring MVC + WebClient vs WebFlux
 <!-- 선택 / 근거 / 잃는 것 -->
@@ -131,10 +155,10 @@ docker compose up -d # MySQL 실행
 #### 모듈·패키지 구조
 <!-- 선택 / 근거 / 잃는 것 -->
 
-## 5. 한계와 향후 개선
+## 6. 한계와 향후 개선
 <!-- 알려진 한계, 설계만 하고 구현하지 않은 것, 시간이 더 있다면 할 일 -->
 
-## 6. 문서
+## 7. 문서
 - [docs/architecture.md](docs/architecture.md): 아키텍처 (전체 구성, 공급사 연동, Mock Supplier)
 - [docs/stay-model.md](docs/stay-model.md): 통합 모델 설계 (표준 모델, 공급사 필드 대응, 매핑)
 - [docs/stay-search-api.md](docs/stay-search-api.md): API 명세
