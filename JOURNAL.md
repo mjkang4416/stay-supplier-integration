@@ -93,7 +93,18 @@
 ## 테스트 전략과 결과
 
 ### 전략
-<!-- 단위·통합 테스트 범위, DB와 Mock Supplier를 쓰는 방식 -->
+세 층으로 나눈다. 자동 테스트는 Mock Supplier 모듈(9090)에 의존하지 않고, 필요한 가짜 서버와 DB를 테스트가 직접 띄운다.
+
+| 층 | 대상 | 도구 | 검증 시나리오 |
+|---|---|---|---|
+| 단위 | 정규화 변환, 연박 판정, 실패 판정 규칙, 검색 서비스의 병합·부분 실패(어댑터는 Mockito mock) | JUnit, Mockito, AssertJ | A·B 응답 → 표준 모델, 재고 0인 날이 있으면 예약 불가, A 실패 시 B 결과만 반환 |
+| 어댑터 HTTP | 어댑터가 WebClient로 실제 HTTP 호출 | WireMock (테스트 안에서 실행) | 503 → 실패, 200 + E503 → 실패, 응답 지연 > 타임아웃 → 실패, 정상 → 표준 모델 |
+| 통합 | 매핑 저장·재실행, 검색 전체 흐름 | @SpringBootTest + Testcontainers MySQL + WireMock | 매핑 두 번 실행해도 식별자 동일, A 장애 상태에서 검색 → B 결과 + 부분 실패 표시 |
+
+도구 선택
+- WireMock (MockWebServer 대신): URL별 규칙이라 A·B 동시 호출 중 A만 실패시키기 쉽고, 지연·장애(fault)가 내장돼 있다. MockWebServer는 응답을 순서대로 쌓는 방식이라 병렬 호출 검증이 헷갈리기 쉽다.
+- Testcontainers (compose DB 대신): `./gradlew test`만으로 실행되고 테스트마다 깨끗한 DB를 쓴다. compose DB는 먼저 띄워야 하고 데이터가 테스트끼리 섞일 수 있다.
+- 의존성(wiremock-standalone, spring-boot-testcontainers, testcontainers mysql·junit-jupiter)은 테스트를 작성하는 시점에 추가한다.
 
 ### 결과
 <!-- 실행 명령, 통과 여부, 검증한 시나리오(정상 / 공급사 장애 / 무응답 등) -->
