@@ -1,5 +1,6 @@
 package com.staysupplier.supplier.a;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -17,6 +18,17 @@ final class SupplierAResponses {
 	}
 
 	record RoomTypeItem(String roomTypeCode, String roomTypeName, Integer maxOccupancy) {
+	}
+
+	record AvailabilityResponse(List<AvailabilityItem> items) {
+	}
+
+	/** 날짜별 1박 단가와 세금이 따로 온다. 결제 금액 = nightlyRate + taxAmount */
+	record AvailabilityItem(String hotelCode, String hotelName, String roomTypeCode, String roomTypeName,
+			Integer maxOccupancy, Boolean breakfastIncluded, String currency, List<DailyRate> dailyRates) {
+	}
+
+	record DailyRate(LocalDate date, Integer remainingRooms, Long nightlyRate, Long taxAmount) {
 	}
 
 	/** 실패 응답 본문: { "error": "...", "message": "..." } */

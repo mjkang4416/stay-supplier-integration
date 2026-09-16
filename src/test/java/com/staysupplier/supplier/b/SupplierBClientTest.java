@@ -1,6 +1,7 @@
 package com.staysupplier.supplier.b;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
@@ -11,7 +12,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
+import com.staysupplier.stay.SupplierRoomOffer;
 import com.staysupplier.stay.SupplierRoomType;
 import com.staysupplier.supplier.FailureReason;
 import com.staysupplier.supplier.Supplier;
@@ -23,6 +27,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -133,6 +138,71 @@ class SupplierBClientTest {
 		server.stubFor(get(urlEqualTo("/b/api/properties")).willReturn(aResponse().withStatus(500)));
 
 		assertFailure(FailureReason.SUPPLIER_ERROR, null);
+	}
+
+	static final String SEARCH_JSON = """
+			{
+			  "resultCode": "0000", "resultMessage": "SUCCESS",
+			  "data": { "items": [ {
+			    "propertyId": "B77120", "propertyName": "Riverside Hotel Seoul",
+			    "roomId": "R-401", "roomName": "Deluxe Twin Room", "maxOccupancy": 2,
+			    "breakfastIncluded": true, "currency": "KRW", "totalPrice": 452000, "taxIncluded": true,
+			    "inventory": [
+			      { "date": "2026-09-01", "remainingRooms": 3 },
+			      { "date": "2026-09-02", "remainingRooms": 1 },
+			      { "date": "2026-09-03", "remainingRooms": 5 }
+			    ]
+			  } ] }
+			}
+			""";
+
+	static final AvailabilityQuery THREE_NIGHTS = new AvailabilityQuery(List.of("B77120"), LocalDate.of(2026, 9, 1),
+			LocalDate.of(2026, 9, 4), 2, 0);
+
+	@Test
+	void normalizesSearchToMinRoomsAndTotalPriceAsIs() {
+		server.stubFor(get(urlPathEqualTo("/b/api/search")).willReturn(okJson(SEARCH_JSON)));
+
+		SupplierFetchResult result = client().fetchAvailability(THREE_NIGHTS).block();
+
+		assertThat(result.failures()).isEmpty();
+		assertThat(result.offers()).containsExactly(
+				new SupplierRoomOffer(Supplier.B, "B77120", "R-401", "Deluxe Twin Room", 2, 1, 452_000L, "KRW", true));
+		server.verify(getRequestedFor(urlPathEqualTo("/b/api/search"))
+			.withQueryParam("propertyIds", equalTo("B77120"))
+			.withQueryParam("checkIn", equalTo("2026-09-01"))
+			.withQueryParam("checkOut", equalTo("2026-09-04"))
+			.withHeader("X-Api-Key", equalTo(SupplierClientTestSupport.API_KEY_B)));
+	}
+
+	@Test
+	void searchFailureWithHttp200IsUnifiedByResultCode() {
+		server.stubFor(get(urlPathEqualTo("/b/api/search")).willReturn(okJson(
+				"{\"resultCode\":\"E503\",\"resultMessage\":\"TEMPORARILY_UNAVAILABLE\",\"data\":null}")));
+
+		SupplierCallException failure = null;
+		try {
+			client().fetchAvailability(THREE_NIGHTS).block();
+		}
+		catch (SupplierCallException ex) {
+			failure = ex;
+		}
+		assertThat(failure).isNotNull();
+		assertThat(failure.getReason()).isEqualTo(FailureReason.UNAVAILABLE);
+		assertThat(failure.getSupplierCode()).isEqualTo("E503");
+	}
+
+	@Test
+	void skipsOfferWhoseInventoryDoesNotCoverEveryNight() {
+		server.stubFor(get(urlPathEqualTo("/b/api/search")).willReturn(okJson("""
+				{ "resultCode": "0000", "resultMessage": "SUCCESS", "data": { "items": [ {
+				  "propertyId": "B1", "roomId": "R-1", "currency": "KRW", "totalPrice": 1000, "breakfastIncluded": false,
+				  "inventory": [ { "date": "2026-09-01", "remainingRooms": 1 }, { "date": "2026-09-02", "remainingRooms": 1 } ] } ] } }
+				""")));
+
+		SupplierFetchResult result = client().fetchAvailability(THREE_NIGHTS).block();
+
+		assertThat(result.offers()).isEmpty();
 	}
 
 	private static ResponseDefinitionBuilder okJson(String body) {

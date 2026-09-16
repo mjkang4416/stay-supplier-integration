@@ -1,5 +1,6 @@
 package com.staysupplier.supplier.b;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -22,6 +23,17 @@ final class SupplierBResponses {
 	}
 
 	record RoomItem(String roomId, String roomName, Integer maxOccupancy) {
+	}
+
+	record SearchData(List<SearchItem> items) {
+	}
+
+	/** 요청 기간의 총액(세금 포함)만 오고 날짜별 요금은 없다. 재고는 날짜별 */
+	record SearchItem(String propertyId, String propertyName, String roomId, String roomName, Integer maxOccupancy,
+			Boolean breakfastIncluded, String currency, Long totalPrice, Boolean taxIncluded, List<InventoryItem> inventory) {
+	}
+
+	record InventoryItem(LocalDate date, Integer remainingRooms) {
 	}
 
 }

@@ -7,6 +7,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import reactor.core.publisher.Mono;
 
+import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
 import com.staysupplier.supplier.FailureReason;
 import com.staysupplier.supplier.Supplier;
@@ -58,6 +60,11 @@ class StubSupplierClient implements SupplierClient {
 			}
 			return Mono.just((List<SupplierHotel>) next);
 		});
+	}
+
+	@Override
+	public Mono<SupplierFetchResult> fetchAvailability(AvailabilityQuery query) {
+		return Mono.just(SupplierFetchResult.empty());
 	}
 
 }

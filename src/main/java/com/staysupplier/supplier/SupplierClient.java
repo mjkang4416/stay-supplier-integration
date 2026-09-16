@@ -4,6 +4,8 @@ import java.util.List;
 
 import reactor.core.publisher.Mono;
 
+import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
 
 /**
@@ -13,6 +15,9 @@ import com.staysupplier.stay.SupplierHotel;
  */
 public interface SupplierClient {
 
+	/** 두 공급사 모두 재고·요금 조회 한 번에 받는 숙소 코드 상한 */
+	int MAX_HOTEL_CODES_PER_REQUEST = 50;
+
 	Supplier supplier();
 
 	/**
@@ -20,5 +25,11 @@ public interface SupplierClient {
 	 * 필수 값이 빠진 항목은 버리고 로그를 남기며, 정상 0건은 빈 목록이다.
 	 */
 	Mono<List<SupplierHotel>> fetchHotels();
+
+	/**
+	 * ② 재고·요금 조회. 코드 목록을 한도(50개)만큼 잘라 병렬 호출하고 요청 기간 기준으로 정규화한다.
+	 * 일부 묶음이 실패하면 결과의 failures 에 담고, 전부 실패하면 예외를 던진다. 깨진 항목은 버리고 로그를 남긴다.
+	 */
+	Mono<SupplierFetchResult> fetchAvailability(AvailabilityQuery query);
 
 }

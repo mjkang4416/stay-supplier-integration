@@ -11,8 +11,12 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
+import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
+import com.staysupplier.stay.SupplierRoomOffer;
 import com.staysupplier.stay.SupplierRoomType;
+import com.staysupplier.supplier.ChunkedFetch;
 import com.staysupplier.supplier.FailureReason;
 import com.staysupplier.supplier.Supplier;
 import com.staysupplier.supplier.SupplierCallException;
@@ -22,7 +26,10 @@ import com.staysupplier.supplier.SupplierWebClients;
 import com.staysupplier.supplier.b.SupplierBResponses.Envelope;
 import com.staysupplier.supplier.b.SupplierBResponses.PropertiesData;
 import com.staysupplier.supplier.b.SupplierBResponses.PropertyItem;
+import com.staysupplier.supplier.b.SupplierBResponses.InventoryItem;
 import com.staysupplier.supplier.b.SupplierBResponses.RoomItem;
+import com.staysupplier.supplier.b.SupplierBResponses.SearchData;
+import com.staysupplier.supplier.b.SupplierBResponses.SearchItem;
 
 /**
  * Supplier B 어댑터. 장애 상황에서도 HTTP 200 을 주고 본문 resultCode 로만 실패를 알리므로,
@@ -34,6 +41,10 @@ public class SupplierBClient implements SupplierClient {
 	private static final Logger log = LoggerFactory.getLogger(SupplierBClient.class);
 
 	private static final ParameterizedTypeReference<Envelope<PropertiesData>> PROPERTIES_TYPE =
+			new ParameterizedTypeReference<>() {
+			};
+
+	private static final ParameterizedTypeReference<Envelope<SearchData>> SEARCH_TYPE =
 			new ParameterizedTypeReference<>() {
 			};
 
@@ -61,7 +72,72 @@ public class SupplierBClient implements SupplierClient {
 			.map(this::normalize);
 	}
 
-	private List<SupplierHotel> normalize(Envelope<PropertiesData> envelope) {
+	@Override
+	public Mono<SupplierFetchResult> fetchAvailability(AvailabilityQuery query) {
+		return ChunkedFetch.fetch(Supplier.B, query.hotelCodes(), MAX_HOTEL_CODES_PER_REQUEST,
+				chunk -> this.webClient.get()
+					.uri(uri -> uri.path("/b/api/search")
+						.queryParam("propertyIds", String.join(",", chunk))
+						.queryParam("checkIn", query.checkIn())
+						.queryParam("checkOut", query.checkOut())
+						.queryParam("adults", query.adults())
+						.queryParam("children", query.children())
+						.build())
+					.retrieve()
+					.onStatus(HttpStatusCode::isError, response -> Mono.just(SupplierFailures.fromStatus(Supplier.B,
+							response.statusCode(), null, response.headers().asHttpHeaders())))
+					.bodyToMono(SEARCH_TYPE)
+					.onErrorMap(error -> SupplierFailures.classify(Supplier.B, error))
+					.map(envelope -> normalizeAvailability(envelope, query)));
+	}
+
+	/**
+	 * 요청 기간 기준으로 정규화: 예약 가능 객실 수 = 날짜별 재고의 최솟값, 총액 = totalPrice 그대로(세금 포함).
+	 * 필수 값이 없거나 날짜 수가 숙박일 수와 다른 항목은 버리고 로그를 남긴다.
+	 */
+	private List<SupplierRoomOffer> normalizeAvailability(Envelope<SearchData> envelope, AvailabilityQuery query) {
+		requireSuccess(envelope);
+		if (envelope.data().items() == null) {
+			throw new SupplierCallException(Supplier.B, FailureReason.INVALID_RESPONSE, "missing data.items");
+		}
+		List<SupplierRoomOffer> offers = new ArrayList<>();
+		for (SearchItem item : envelope.data().items()) {
+			if (isBlank(item.propertyId()) || isBlank(item.roomId()) || isBlank(item.currency()) || item.totalPrice() == null
+					|| item.totalPrice() < 0 || item.inventory() == null || item.inventory().size() != query.nights()) {
+				log.warn("supplier=B offer skipped: missing code/currency/totalPrice or inventory != nights (propertyId={}, roomId={}, days={}, nights={})",
+						item.propertyId(), item.roomId(), (item.inventory() == null) ? null : item.inventory().size(),
+						query.nights());
+				continue;
+			}
+			int availableRooms = Integer.MAX_VALUE;
+			boolean valid = true;
+			for (InventoryItem inventory : item.inventory()) {
+				if (inventory.remainingRooms() == null || inventory.remainingRooms() < 0) {
+					valid = false;
+					break;
+				}
+				availableRooms = Math.min(availableRooms, inventory.remainingRooms());
+			}
+			if (!valid) {
+				log.warn("supplier=B offer skipped: invalid inventory (propertyId={}, roomId={})", item.propertyId(),
+						item.roomId());
+				continue;
+			}
+			if (item.breakfastIncluded() == null) {
+				log.warn("supplier=B breakfastIncluded missing, treated as false (propertyId={}, roomId={})",
+						item.propertyId(), item.roomId());
+			}
+			offers.add(new SupplierRoomOffer(Supplier.B, item.propertyId(), item.roomId(), item.roomName(),
+					occupancyOrUnknown(item.propertyId(), item.roomId(), item.maxOccupancy()), availableRooms,
+					item.totalPrice(), item.currency(), Boolean.TRUE.equals(item.breakfastIncluded())));
+		}
+		return offers;
+	}
+
+	/**
+	 * resultCode 가 성공(0000)이고 data 가 있는지 확인한다. 실패 코드는 통일한 원인으로, 구조 누락은 깨진 응답으로 던진다.
+	 */
+	private static void requireSuccess(Envelope<?> envelope) {
 		String resultCode = envelope.resultCode();
 		if (resultCode == null) {
 			throw new SupplierCallException(Supplier.B, FailureReason.INVALID_RESPONSE, "missing resultCode");
@@ -69,8 +145,15 @@ public class SupplierBClient implements SupplierClient {
 		if (!SupplierBResponses.SUCCESS_CODE.equals(resultCode)) {
 			throw new SupplierCallException(Supplier.B, reasonOf(resultCode), resultCode);
 		}
-		// 성공인데 data.items 구조가 없으면 "0건"이 아니라 깨진 응답이다. 0건은 items 가 빈 목록으로 온다
-		if (envelope.data() == null || envelope.data().items() == null) {
+		// 성공인데 data 구조가 없으면 "0건"이 아니라 깨진 응답이다. 0건은 items 가 빈 목록으로 온다
+		if (envelope.data() == null) {
+			throw new SupplierCallException(Supplier.B, FailureReason.INVALID_RESPONSE, "missing data.items");
+		}
+	}
+
+	private List<SupplierHotel> normalize(Envelope<PropertiesData> envelope) {
+		requireSuccess(envelope);
+		if (envelope.data().items() == null) {
 			throw new SupplierCallException(Supplier.B, FailureReason.INVALID_RESPONSE, "missing data.items");
 		}
 		List<SupplierHotel> hotels = new ArrayList<>();

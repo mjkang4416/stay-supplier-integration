@@ -1,7 +1,9 @@
 package com.staysupplier.supplier.a;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import com.github.tomakehurst.wiremock.WireMockServer;
 import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
@@ -10,7 +12,10 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
+import com.staysupplier.stay.SupplierRoomOffer;
 import com.staysupplier.stay.SupplierRoomType;
 import com.staysupplier.supplier.FailureReason;
 import com.staysupplier.supplier.Supplier;
@@ -21,6 +26,7 @@ import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.get;
 import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlPathEqualTo;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -156,6 +162,120 @@ class SupplierAClientTest {
 				SupplierClientTestSupport.webClients("http://localhost:1", Duration.ofSeconds(1)));
 
 		assertFailure(client, FailureReason.CONNECTION, null);
+	}
+
+	static final String AVAILABILITY_JSON = """
+			{
+			  "items": [
+			    {
+			      "hotelCode": "A-10023", "hotelName": "Riverside Hotel Seoul",
+			      "roomTypeCode": "DLX-TWN", "roomTypeName": "Deluxe Twin", "maxOccupancy": 2,
+			      "breakfastIncluded": false, "currency": "KRW",
+			      "dailyRates": [
+			        { "date": "2026-09-01", "remainingRooms": 3, "nightlyRate": 120000, "taxAmount": 12000 },
+			        { "date": "2026-09-02", "remainingRooms": 1, "nightlyRate": 150000, "taxAmount": 15000 },
+			        { "date": "2026-09-03", "remainingRooms": 5, "nightlyRate": 120000, "taxAmount": 12000 }
+			      ]
+			    },
+			    {
+			      "hotelCode": "A-10044", "hotelName": "Namsan Garden Stay",
+			      "roomTypeCode": "STD-DBL", "roomTypeName": "Standard Double", "maxOccupancy": 2,
+			      "breakfastIncluded": false, "currency": "KRW",
+			      "dailyRates": [
+			        { "date": "2026-09-01", "remainingRooms": 2, "nightlyRate": 88000, "taxAmount": 8800 },
+			        { "date": "2026-09-02", "remainingRooms": 0, "nightlyRate": 99000, "taxAmount": 9900 },
+			        { "date": "2026-09-03", "remainingRooms": 4, "nightlyRate": 88000, "taxAmount": 8800 }
+			      ]
+			    }
+			  ]
+			}
+			""";
+
+	static final AvailabilityQuery THREE_NIGHTS = new AvailabilityQuery(List.of("A-10023", "A-10044"),
+			LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 4), 2, 0);
+
+	@Test
+	void normalizesAvailabilityToMinRoomsAndTaxIncludedTotalForThePeriod() {
+		server.stubFor(get(urlPathEqualTo("/a/v1/availability")).willReturn(okJson(AVAILABILITY_JSON)));
+
+		SupplierFetchResult result = client().fetchAvailability(THREE_NIGHTS).block();
+
+		assertThat(result.failures()).isEmpty();
+		assertThat(result.offers()).containsExactly(
+				new SupplierRoomOffer(Supplier.A, "A-10023", "DLX-TWN", "Deluxe Twin", 2, 1, 429_000L, "KRW", false),
+				new SupplierRoomOffer(Supplier.A, "A-10044", "STD-DBL", "Standard Double", 2, 0, 302_500L, "KRW", false));
+		server.verify(getRequestedFor(urlPathEqualTo("/a/v1/availability"))
+			.withQueryParam("hotelCodes", equalTo("A-10023,A-10044"))
+			.withQueryParam("checkIn", equalTo("2026-09-01"))
+			.withQueryParam("checkOut", equalTo("2026-09-04"))
+			.withQueryParam("adults", equalTo("2"))
+			.withQueryParam("children", equalTo("0")));
+	}
+
+	@Test
+	void splitsHotelCodesIntoRequestsOfAtMostFifty() {
+		server.stubFor(get(urlPathEqualTo("/a/v1/availability")).willReturn(okJson("{ \"items\": [] }")));
+		List<String> codes = IntStream.rangeClosed(1, 120).mapToObj(i -> "A-" + i).toList();
+
+		SupplierFetchResult result = client()
+			.fetchAvailability(new AvailabilityQuery(codes, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 2), 1, 0))
+			.block();
+
+		assertThat(result.offers()).isEmpty();
+		server.verify(3, getRequestedFor(urlPathEqualTo("/a/v1/availability")));
+	}
+
+	@Test
+	void keepsOtherChunksWhenOneChunkFails() {
+		// 51개 코드 → 묶음 두 개. 앞 50개 묶음은 503, 마지막 1개 묶음은 정상
+		List<String> codes = new java.util.ArrayList<>(IntStream.rangeClosed(1, 50).mapToObj(i -> "A-x" + i).toList());
+		codes.add("A-10023");
+		server.stubFor(get(urlPathEqualTo("/a/v1/availability"))
+			.withQueryParam("hotelCodes", equalTo(String.join(",", codes.subList(0, 50))))
+			.willReturn(aResponse().withStatus(503)));
+		server.stubFor(get(urlPathEqualTo("/a/v1/availability"))
+			.withQueryParam("hotelCodes", equalTo("A-10023"))
+			.willReturn(okJson(AVAILABILITY_JSON)));
+
+		SupplierFetchResult result = client()
+			.fetchAvailability(new AvailabilityQuery(codes, LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 4), 2, 0))
+			.block();
+
+		assertThat(result.offers()).hasSize(2);
+		assertThat(result.failures()).singleElement().satisfies(failure -> {
+			assertThat(failure.reason()).isEqualTo(FailureReason.UNAVAILABLE);
+			assertThat(failure.hotelCodes()).hasSize(50);
+		});
+	}
+
+	@Test
+	void failsWhenEveryChunkFails() {
+		server.stubFor(get(urlPathEqualTo("/a/v1/availability")).willReturn(aResponse().withStatus(503)
+			.withHeader("Content-Type", "application/json")
+			.withBody("{\"error\":\"SERVICE_UNAVAILABLE\",\"message\":\"temporarily unavailable\"}")));
+
+		SupplierCallException failure = null;
+		try {
+			client().fetchAvailability(THREE_NIGHTS).block();
+		}
+		catch (SupplierCallException ex) {
+			failure = ex;
+		}
+		assertThat(failure).isNotNull();
+		assertThat(failure.getReason()).isEqualTo(FailureReason.UNAVAILABLE);
+	}
+
+	@Test
+	void skipsOfferWhoseDailyRatesDoNotCoverEveryNight() {
+		server.stubFor(get(urlPathEqualTo("/a/v1/availability")).willReturn(okJson("""
+				{ "items": [ { "hotelCode": "A-1", "roomTypeCode": "R", "currency": "KRW", "breakfastIncluded": false,
+				  "dailyRates": [ { "date": "2026-09-01", "remainingRooms": 1, "nightlyRate": 100, "taxAmount": 10 } ] } ] }
+				""")));
+
+		SupplierFetchResult result = client().fetchAvailability(THREE_NIGHTS).block();
+
+		assertThat(result.offers()).isEmpty();
+		assertThat(result.failures()).isEmpty();
 	}
 
 	private static com.github.tomakehurst.wiremock.client.ResponseDefinitionBuilder okJson(String body) {
