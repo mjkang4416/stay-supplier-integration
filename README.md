@@ -137,6 +137,7 @@ curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # 복구
 | Mock Supplier | 진행 전 | [architecture.md](docs/architecture.md) |
 | 연동 지표·모니터링 설계 (권장) | 진행 전 | [architecture.md](docs/architecture.md) |
 | 재시도·서킷 브레이커 (선택, Resilience4j) | 진행 전 | [architecture.md](docs/architecture.md) |
+| 요금/재고 캐시 전략 (선택) | 설계만. 목표 구조는 관리형 Redis 공유 캐시, 도입은 429 모니터 신호로 판단 | [architecture.md](docs/architecture.md) |
 <!-- 그 밖의 선택 구현은 진행한 항목만 추가: 상태는 구현 / 설계만 / 미구현 -->
 
 ## 5. 설계 의사결정과 근거
