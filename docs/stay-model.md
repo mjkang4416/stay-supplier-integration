@@ -17,7 +17,24 @@
 <!-- 필드, 타입, 의미 -->
 
 ## 2. 공급사 필드 대응
-<!-- 표준 모델 필드 | Supplier A | Supplier B | 변환 규칙 -->
+
+구현 상태: ① 숙소 목록까지. ② 재고·요금은 검색 API와 함께 추가한다.
+
+### 2.1 숙소 목록 (①) → `SupplierHotel` · `SupplierRoomType` → 매핑 테이블
+
+| 표준 형태 · 컬럼 | Supplier A (`GET /a/v1/hotels`) | Supplier B (`GET /b/api/properties`) | 변환 규칙 |
+|---|---|---|---|
+| `supplier` · `hotel_mapping.supplier` | 상수 `A` | 상수 `B` | 어댑터가 자기 값을 넣는다 |
+| `hotelCode` · `hotel_mapping.supplier_hotel_code` | `items[].hotelCode` | `data.items[].propertyId` | 필수. 없으면 그 항목 격리 |
+| `hotelName` · `hotel_mapping.hotel_name` | `items[].hotelName` | `data.items[].propertyName` | 필수. 하루 1회 덮어쓴다 |
+| `room_type_mapping.hotel_id` | 숙소 upsert가 돌려준 `id` | 같음 | 숙소를 먼저 저장해야 하므로 두 단계 |
+| `roomTypeCode` · `room_type_mapping.supplier_room_type_code` | `roomTypes[].roomTypeCode` | `rooms[].roomId` | 필수. 숙소 안에서만 유일 |
+| `roomTypeName` · `room_type_mapping.room_type_name` | `roomTypes[].roomTypeName` | `rooms[].roomName` | 필수 |
+| `maxOccupancy` · `room_type_mapping.max_occupancy` | `roomTypes[].maxOccupancy` | `rooms[].maxOccupancy` | 없거나 1 미만이면 기본값 대신 NULL(미상)로 저장하고 로그. 검색은 ② 응답의 `maxOccupancy`를 우선 쓰고, 둘 다 없으면 인원 필터를 적용하지 않고 응답의 인원을 비운다 |
+| `active` | 응답에 없음 | 응답에 없음 | 델타 계산 결과(3.2) |
+| 버리는 것 | 없음 | `resultCode`, `resultMessage` (판정에만 사용) | 공급사 원본은 저장하지 않는다 |
+
+정상 0건은 `items: []`(A) / `data.items: []`(B)이고, 그 구조 자체가 없으면 깨진 응답(`INVALID_RESPONSE`)으로 본다. 판정 규칙은 [architecture 4.2](architecture.md).
 
 ## 3. 매핑
 
@@ -47,7 +64,7 @@
 | `hotel_id` | BIGINT FK → hotel_mapping.id | 소속 숙소 |
 | `supplier_room_type_code` | VARCHAR(100) | 공급사 객실 타입 코드 (`roomTypeCode` / `roomId`) |
 | `room_type_name` | VARCHAR(255) | 객실 타입명 |
-| `max_occupancy` | INT | 최대 수용 인원 |
+| `max_occupancy` | INT NULL | 최대 수용 인원. 공급사가 주지 않으면 NULL(미상) |
 | `active` | BOOLEAN | |
 | `created_at`, `updated_at` | DATETIME | |
 | UNIQUE `uk_hotel_room` | (`hotel_id`, `supplier_room_type_code`) | 객실 타입 코드는 숙소 안에서만 유일 |

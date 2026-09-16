@@ -79,19 +79,50 @@
 ## 4. 공급사 연동
 
 ### 4.1 어댑터 구조와 경계
-<!-- 공통 인터페이스, 공급사별 구현, 공급사 전용 DTO가 머무는 범위 -->
+
+구현 상태: ① 숙소 목록 조회까지 구현. ② 재고·요금 조회는 검색 API와 함께 추가한다.
+
+- 공통 인터페이스 `supplier.SupplierClient`: `supplier()`, `fetchHotels()`. 반환은 `Mono<List<SupplierHotel>>`이고, 호출자가 여러 공급사를 합친 뒤 끝에서 한 번 `block()`한다.
+- 구현체는 공급사별 패키지에 하나씩: `supplier.a.SupplierAClient`, `supplier.b.SupplierBClient`. 공급사 전용 응답 형식(`SupplierAResponses`, `SupplierBResponses`)은 package-private라 그 패키지 밖에서 참조할 수 없다.
+- 어댑터 밖으로 나가는 형태는 `stay.SupplierHotel`, `stay.SupplierRoomType`, `supplier.FailureReason`뿐이다. 식별자는 공급사 코드 그대로이고, 내부 식별자 배정은 매핑(stay-model 3장)이 한다.
+- 어댑터의 책임은 호출과 번역까지다. 저장(매핑 델타)·병합·캐시는 서비스가 하고, 재시도도 어댑터에 없이 호출자가 `Mono`에 정책을 붙인다. 같은 어댑터를 크론잡·검색·실시간 재확인이 다른 방식으로 쓰기 때문이다.
+- WebClient는 `supplier.SupplierWebClients`가 공급사마다 하나씩 기동 시 만들어 둔다. 기본 URL, 공통 규약의 `X-Api-Key` 헤더, 연결·응답 타임아웃이 미리 적용되어 어댑터 코드에는 경로와 번역만 남는다. 설정이 빠진 공급사가 있으면 기동이 실패한다.
+- 정규화 실패 격리: 식별에 필요한 값(숙소 코드·이름, 객실 타입 코드·이름)이 빠진 항목은 그 항목만 버리고 warn 로그를 남긴다. `maxOccupancy`가 없거나 1 미만이면 객실 타입은 살리되 기본값을 넣지 않고 미상(null)으로 둔다. 인원 필터에 추측한 값이 들어가면 안 되기 때문이며, 검색 시점에는 ② 응답의 `maxOccupancy`로 채울 수 있다. 필드 길이는 예제 데이터 범위(코드 100자, 이름 255자)로 두고 따로 검사하지 않는다.
 
 ### 4.2 실패 판정
-<!-- 공급사별 실패 신호(HTTP 상태 / resultCode) → 내부 실패 유형 대응표 -->
+
+A는 HTTP 상태 코드로, B는 항상 HTTP 200에 본문 `resultCode`로 실패를 알린다. 어댑터가 둘을 같은 `FailureReason`으로 바꾸고 `SupplierCallException(공급사, 원인, 원본 코드, Retry-After)` 하나로 던진다. 밖에서는 원인만 본다.
+
+| `FailureReason` | Supplier A (HTTP 상태) | Supplier B (`resultCode`) | 공통 (전송 계층) |
+|---|---|---|---|
+| `INVALID_REQUEST` | 400 (`INVALID_DATE_RANGE`, `INVALID_PARAMETER`, `TOO_MANY_HOTEL_CODES`), 그 밖의 4xx | `E400` | |
+| `UNAUTHORIZED` | 401 | `E401` | |
+| `RATE_LIMITED` | 429 (`Retry-After` 초 단위면 예외에 실음) | `E429` | |
+| `SUPPLIER_ERROR` | 500, 그 밖의 5xx | `E500` | |
+| `UNAVAILABLE` | 503 | `E503` | B가 스펙과 달리 HTTP 오류를 주면 A와 같은 상태 규칙으로 판정 |
+| `TIMEOUT` | | | 응답 타임아웃 초과 |
+| `CONNECTION` | | | 연결 거부·연결 타임아웃·DNS 실패 |
+| `INVALID_RESPONSE` | 본문 파싱 실패, `items` 구조 없음 | 모르는 `resultCode`, `0000`인데 `data.items` 구조 없음 | 코덱 오류 |
+
+"없음"은 두 종류로 나눈다. 공급사가 `items: []`로 "팔 게 없다"고 말한 것은 정상 0건이고, 성공 코드인데 `data`나 `items` 구조 자체가 없는 것은 깨진 응답이다. 후자를 0건으로 읽으면 실제로 있는 상품이 검색에서 사라지는데 지표는 성공으로 남아 알림이 울리지 않는다. 판정 코드는 각 공급사 패키지 안에 있다(`SupplierBClient.reasonOf`, 공통 규칙은 `SupplierFailures`).
 
 ### 4.3 타임아웃
-<!-- 연결·응답 타임아웃 설정 위치와 값 -->
+
+설정 위치는 `supplier.endpoints.{a|b}.connect-timeout`(기본 1초)과 `response-timeout`(기본 3초)이고, `SupplierWebClients`가 공급사별 WebClient를 만들 때 적용한다(Spring Boot `HttpClientSettings` → reactor-netty 연결 타임아웃·응답 타임아웃). 값의 근거는 [README 5.5](../README.md)에 있다. 초과하면 `FailureReason.TIMEOUT`(응답) 또는 `CONNECTION`(연결)으로 통일된다.
 
 ### 4.4 부분 실패 처리
 <!-- 일부 공급사 실패 시 처리 순서와 응답에 남기는 정보 -->
 
 ### 4.5 신규 Supplier 추가 절차
-<!-- 추가할 코드·설정 목록, 수정하지 않는 부분 -->
+
+추가하는 것 세 곳:
+1. `supplier.Supplier` enum에 값 추가 (예: `C`).
+2. `supplier/c` 패키지에 `SupplierCClient implements SupplierClient`와 전용 응답 형식. 그 공급사의 실패 신호를 `FailureReason`으로 바꾸는 규칙도 이 패키지 안에 둔다. `@Component`면 자동으로 `List<SupplierClient>`에 들어간다.
+3. `application.properties`에 `supplier.endpoints.c.base-url`, `api-key`, `connect-timeout`, `response-timeout`. 빠뜨리면 기동 시 실패한다.
+
+수정하지 않는 것: 크론잡(`MappingSyncJob`), 매핑 테이블·매퍼, 검색 서비스, 표준 형태, `SupplierWebClients`, `SupplierFailures`. 이들은 인터페이스와 표준 형태만 본다.
+
+같이 추가할 것: WireMock 테스트(정규화 결과, `X-Api-Key` 전송, 실패 판정, 타임아웃)와 stay-model 2장 필드 대응표의 열 하나.
 
 ### 4.6 재시도·서킷 브레이커 (선택)
 <!-- 재시도 대상 실패 유형과 백오프, 서킷 브레이커 차단·복구 조건. 설계만 한 경우 "구현 상태: 설계만" 표시 -->

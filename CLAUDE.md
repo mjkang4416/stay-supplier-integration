@@ -16,7 +16,7 @@
 - 3306 포트가 이미 사용 중이면 `MYSQL_PORT=3307 docker compose up -d`, 애플리케이션은 `DB_PORT=3307`로 실행
 - `./gradlew build` - 컴파일과 전체 테스트
 - `./gradlew bootRun` - 애플리케이션 실행 (기본 포트 8080)
-- Mock Supplier 실행 - Mock 구성 확정 후 기입 (애플리케이션과 다른 포트 사용)
+- `./gradlew :mock-supplier:bootRun` - Mock Supplier 실행 (포트 9090, 별도 터미널)
 
 ### 테스트
 - `./gradlew test` - 전체 테스트
@@ -42,7 +42,13 @@
 - SpringDoc OpenAPI
 
 ### 디렉토리 구조
-- 패키지 구조 확정 후 기입
+기능별 패키지. 공급사 전용 형식은 `supplier.a`, `supplier.b` 밖으로 나가지 않는다.
+- `supplier/` - `SupplierClient` 인터페이스, `Supplier` enum, `SupplierProperties`(설정), `SupplierWebClients`(공급사별 WebClient), `FailureReason`·`SupplierCallException`·`SupplierFailures`(실패 판정 통일)
+- `supplier/a`, `supplier/b` - 공급사별 어댑터와 전용 응답 형식(package-private). 새 공급사는 `supplier/c`
+- `stay/` - 표준 형태 (`SupplierHotel`, `SupplierRoomType`)
+- `mapping/` - 매핑 엔티티, MyBatis 매퍼(XML은 `resources/mapper/`), 크론잡·인메모리 레지스트리(예정)
+- `config/` - 설정 바인딩·빈 등록 (`SupplierClientConfig`)
+- `search/` - 통합 검색 API (예정)
 
 ## Docs (작업 전에 해당 문서를 읽을 것)
 
@@ -70,7 +76,7 @@
 
 ### 저장소
 - DB에는 공급사 코드 ↔ 내부 식별자 매핑만 저장한다. 요금과 재고는 저장하지 않는다.
-- MyBatis 매퍼 작성 방식(XML / 애너테이션)은 확정 후 기입한다.
+- MyBatis 매퍼는 XML(`src/main/resources/mapper/*.xml`)로 작성한다. upsert·조건 갱신 SQL이 길어 애너테이션보다 읽기 편하다.
 
 ### 문서
 - 설계를 바꾸면 `JOURNAL.md` 설계 의사결정 기록에 과정을 남기고, `README.md` 5장(결정·근거)과 해당 `docs/` 명세를 함께 고친다.
