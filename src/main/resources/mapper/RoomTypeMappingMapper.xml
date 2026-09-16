@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.staysupplier.mapping.RoomTypeMappingMapper">
+
+    <sql id="columns">
+        id, hotel_id, supplier_room_type_code, room_type_name, max_occupancy, active, created_at, updated_at
+    </sql>
+
+    <insert id="upsert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO room_type_mapping (hotel_id, supplier_room_type_code, room_type_name, max_occupancy, active, created_at, updated_at)
+        VALUES (#{hotelId}, #{supplierRoomTypeCode}, #{roomTypeName}, #{maxOccupancy}, TRUE, NOW(), NOW()) AS new
+        ON DUPLICATE KEY UPDATE
+            id = LAST_INSERT_ID(id),
+            room_type_name = new.room_type_name,
+            max_occupancy = new.max_occupancy,
+            active = TRUE,
+            updated_at = NOW()
+    </insert>
+
+    <select id="findActiveByHotelId" resultType="com.staysupplier.mapping.RoomTypeMapping">
+        SELECT <include refid="columns"/>
+        FROM room_type_mapping
+        WHERE hotel_id = #{hotelId} AND active = TRUE
+        ORDER BY id
+    </select>
+
+    <select id="findAllActive" resultType="com.staysupplier.mapping.RoomTypeMapping">
+        SELECT <include refid="columns"/>
+        FROM room_type_mapping
+        WHERE active = TRUE
+        ORDER BY id
+    </select>
+
+    <update id="deactivate">
+        UPDATE room_type_mapping
+        SET active = FALSE, updated_at = NOW()
+        WHERE hotel_id = #{hotelId}
+          AND active = TRUE
+          AND supplier_room_type_code IN
+          <foreach collection="codes" item="code" open="(" separator="," close=")">
+              #{code}
+          </foreach>
+    </update>
+
+</mapper>

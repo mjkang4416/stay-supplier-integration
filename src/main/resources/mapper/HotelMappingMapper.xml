@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.staysupplier.mapping.HotelMappingMapper">
+
+    <sql id="columns">
+        id, supplier, supplier_hotel_code, hotel_name, active, created_at, updated_at
+    </sql>
+
+    <!--
+      유니크 키 (supplier, supplier_hotel_code) 충돌 시 삽입 대신 그 행을 갱신한다.
+      id = LAST_INSERT_ID(id) 로 기존 행의 id 를 generated key 로 돌려받는다.
+    -->
+    <insert id="upsert" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO hotel_mapping (supplier, supplier_hotel_code, hotel_name, active, created_at, updated_at)
+        VALUES (#{supplier}, #{supplierHotelCode}, #{hotelName}, TRUE, NOW(), NOW()) AS new
+        ON DUPLICATE KEY UPDATE
+            id = LAST_INSERT_ID(id),
+            hotel_name = new.hotel_name,
+            active = TRUE,
+            updated_at = NOW()
+    </insert>
+
+    <select id="findActiveBySupplier" resultType="com.staysupplier.mapping.HotelMapping">
+        SELECT <include refid="columns"/>
+        FROM hotel_mapping
+        WHERE supplier = #{supplier} AND active = TRUE
+        ORDER BY id
+    </select>
+
+    <select id="findAllActive" resultType="com.staysupplier.mapping.HotelMapping">
+        SELECT <include refid="columns"/>
+        FROM hotel_mapping
+        WHERE active = TRUE
+        ORDER BY id
+    </select>
+
+    <update id="deactivate">
+        UPDATE hotel_mapping
+        SET active = FALSE, updated_at = NOW()
+        WHERE supplier = #{supplier}
+          AND active = TRUE
+          AND supplier_hotel_code IN
+          <foreach collection="codes" item="code" open="(" separator="," close=")">
+              #{code}
+          </foreach>
+    </update>
+
+</mapper>
