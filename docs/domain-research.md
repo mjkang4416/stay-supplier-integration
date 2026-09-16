@@ -134,6 +134,19 @@
 
 요금은 자동 RMS 기준 하루 12~40회이고, 한 번 갱신하면 여러 날짜 키가 함께 바뀌어요. 그래서 **키 하나로 보면 요금(30분~2시간)이 재고(1.6~5시간)보다 오히려 자주 바뀔 수 있어요.** 어느 쪽이든 변경 간격은 시간 단위이고, 검색은 인기 키에서 분당 단위라 캐시가 성립해요. 캐시 주기는 둘 중 짧은 쪽(30분)을 기준으로 잡아요. 이 계산은 평균이라 실제 값은 운영에서 불일치율로 측정해요.
 
+### 공급사 API가 공개한 호출 한도
+
+우리 스펙에는 요청당 50개 상한과 429의 존재만 있고 초당 한도는 없어요. 출발값을 잡으려고 실제 숙박 공급사 API가 공개한 한도를 확인했어요.
+
+| 공급사 API | 공개된 한도 | 429 뒤 동작 |
+|---|---|---|
+| Booking.com Demand API | 샌드박스 분당 50회(≈초당 0.8회). 운영은 계정별로 담당자에게 문의 | 약 1분 차단 후 재개. 지수 백오프 권고 |
+| Hotelbeds | Production plan 초당 4회 | 명시 없음 |
+| Amadeus Self-Service | 100ms당 1회(초당 10회). 운영은 계약별 | 명시 없음 |
+| Expedia Rapid | 초당 횟수가 아니라 요청 부하(숙소 ≤250, 객실 ≤8, 박수)로 제한. 트래픽에 따라 조정 | 명시 없음 |
+
+공개된 값이 초당 0.8~10회 범위라, 공급사당 초당 1회에서 시작하면 그 아래쪽이에요. 429를 받았을 때 물러나는 시간의 상한(60초)은 Booking.com의 1분 차단에 맞췄어요. 어느 공급사도 운영 한도를 공개 문서에 고정하지 않고 계정·계약별로 정하므로, 설계에서도 한도는 설정값으로 두고 실측으로 맞춰요.
+
 ### 이용이 가장 적은 시간대
 
 매핑 sync처럼 하루 1회 도는 작업은 소비자 접근이 적은 시간대에 두려고 조사했어요.
@@ -164,6 +177,7 @@
 
 ## 6. 참고 자료
 - 재고 갱신 소프트웨어 상한: [Cloudbeds API FAQ (property당 초당 5회)](https://developers.cloudbeds.com/docs/faq), [Booking.com Connectivity APIs (엔드포인트별 제한, 값 비공개)](https://developers.booking.com/connectivity/docs)
+- 공급사 API 호출 한도: [Booking.com Demand API, Rate limiting](https://developers.booking.com/demand/docs/development-guide/rate-limiting), [Hotelbeds, How to use Content API (Production 4 QPS)](https://developer.hotelbeds.com/documentation/hotels/content-api/how-use-content-api/), [Amadeus for Developers, Hotel APIs tutorial](https://developers.amadeus.com/self-service/apis-docs/guides/developer-guides/resources/hotels/), [Expedia Rapid, About the Shopping API](https://developers.expediagroup.com/rapid/lodging/shopping/about-shopping-api)
 - 이용 시간대: [Priceline, best time to book a hotel (Net Affinity 조사 인용)](https://press.priceline.com/this-is-the-best-time-to-book-a-hotel/), [Loopex Digital, Busiest Hours Online](https://www.loopexdigital.com/blog/busiest-time-online-worldwide), [GrowTraffic, Peak Website Traffic Hours](https://growtraffic.co.uk/what-hours-are-peak-website-traffic-hours/)
 - 점유율·숙박일수·리드타임: [CoStar/STR, U.S. hotel performance 2025](https://www.hotelmanagement.net/data-trends/costar-us-hotel-occupancy-revpar-down-yoy-2025), [SiteMinder, Hotel Booking Trends](https://www.siteminder.com/hotel-booking-trends/), [Hotel Management, SiteMinder 2025 트렌드](https://www.hotelmanagement.net/data-trends/siteminder-domestic-bookings-share-32-pps-2025)
 - 요금 갱신 빈도: [RoomPriceGenie, Hotel Dynamic Pricing Guide](https://roompricegenie.com/hotel-dynamic-pricing-everything-you-need-to-know-in-2026/), [PriceLabs, Dynamic Pricing Software with Automatic Rate Adjustments](https://hello.pricelabs.co/blog/hotel-dynamic-pricing-software-with-automatic-rate-adjustments/), [SiteMinder, Hotel dynamic pricing](https://www.siteminder.com/r/hotel-dynamic-pricing/)
