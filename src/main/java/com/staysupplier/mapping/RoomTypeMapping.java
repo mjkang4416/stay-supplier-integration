@@ -15,7 +15,8 @@ public class RoomTypeMapping {
 
 	private String roomTypeName;
 
-	private int maxOccupancy;
+	/** 최대 수용 인원. 공급사가 주지 않으면 null (미상) */
+	private Integer maxOccupancy;
 
 	private boolean active = true;
 
@@ -26,7 +27,7 @@ public class RoomTypeMapping {
 	public RoomTypeMapping() {
 	}
 
-	public RoomTypeMapping(Long hotelId, String supplierRoomTypeCode, String roomTypeName, int maxOccupancy) {
+	public RoomTypeMapping(Long hotelId, String supplierRoomTypeCode, String roomTypeName, Integer maxOccupancy) {
 		this.hotelId = hotelId;
 		this.supplierRoomTypeCode = supplierRoomTypeCode;
 		this.roomTypeName = roomTypeName;
@@ -65,11 +66,11 @@ public class RoomTypeMapping {
 		this.roomTypeName = roomTypeName;
 	}
 
-	public int getMaxOccupancy() {
+	public Integer getMaxOccupancy() {
 		return maxOccupancy;
 	}
 
-	public void setMaxOccupancy(int maxOccupancy) {
+	public void setMaxOccupancy(Integer maxOccupancy) {
 		this.maxOccupancy = maxOccupancy;
 	}
 

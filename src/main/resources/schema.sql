@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS room_type_mapping (
     hotel_id                BIGINT       NOT NULL,
     supplier_room_type_code VARCHAR(100) NOT NULL,
     room_type_name          VARCHAR(255) NOT NULL,
-    max_occupancy           INT          NOT NULL,
+    max_occupancy           INT          NULL,      -- 공급사가 주지 않으면 NULL (미상)
     active                  BOOLEAN      NOT NULL DEFAULT TRUE,
     created_at              DATETIME     NOT NULL,
     updated_at              DATETIME     NOT NULL,
