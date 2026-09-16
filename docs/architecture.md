@@ -112,7 +112,7 @@ A는 HTTP 상태 코드로, B는 항상 HTTP 200에 본문 `resultCode`로 실�
 
 ### 4.4 부분 실패 처리
 
-구현 상태: 크론잡 경로는 구현. 검색 경로는 검색 API와 함께 추가한다.
+구현 상태: 크론잡 경로(`MappingSyncJob`)와 검색 경로(`StaySearchService`) 모두 구현.
 
 실패는 병합하기 전에 공급사 단위로 가둔다. Reactor의 `Flux.merge`·`Mono.zip`은 하나라도 에러면 전체를 에러로 끝내고 나머지를 취소하므로, 각 공급사 체인 안(`flatMap` 안)에서 `SupplierCallException`을 그 공급사의 실패 결과로 바꾼 뒤 `collectList()`로 모은다. 병합 뒤에서 잡으면 늦다.
 
@@ -146,7 +146,7 @@ Flux.fromIterable(clients)
 
 ### 4.6 재시도·서킷 브레이커 (선택)
 
-구현 상태: 크론잡 재시도는 구현(`MappingSyncJob`, `mapping.sync.retry-*`). 검색 재시도는 검색 API와 함께. 서킷 브레이커는 설계만.
+구현 상태: 크론잡 재시도(`MappingSyncJob`, `mapping.sync.retry-*`)와 검색 재시도(`StaySearchService`, `search.retry-*`)는 구현. 서킷 브레이커는 설계만.
 
 재시도 정책은 어댑터가 아니라 호출자가 정한다. 사람이 기다리는지에 따라 다르기 때문이다.
 

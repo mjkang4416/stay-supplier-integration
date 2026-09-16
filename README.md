@@ -124,11 +124,19 @@ docker compose up -d                                        # 1. MySQL (Docker)
 | 데이터 | `mysql-data` 볼륨에 유지, 초기화는 `docker compose down -v` |
 
 ### 동작 확인
-<!-- 검색 API 구현 후 기입: 정상 검색 → A 장애 전환 → 부분 실패 확인 → A 무응답 전환 → 타임아웃 확인 -->
+Mock의 예제 데이터(9/1~9/4, 성인 2)로 정상 → 부분 실패 → 타임아웃 → 전부 실패를 순서대로 본다. 8080이 사용 중이면 `./gradlew :bootRun --args='--server.port=8081'`로 띄우고 아래 포트를 바꾼다.
 ```bash
-curl -X POST 'http://localhost:9090/control/a/mode?value=error'         # Supplier A 장애
-curl -X POST 'http://localhost:9090/control/a/mode?value=no-response'   # Supplier A 무응답
-curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # 복구
+Q='http://localhost:8080/api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&children=0'
+curl -s "$Q"                                                            # 1. 정상: Riverside A·B 두 건. Namsan은 9/2 재고 0이라 제외
+curl -s -X POST 'http://localhost:9090/control/a/mode?value=error'      # 2. Supplier A 장애
+curl -s "$Q"                                                            #    200 + failures: [{ "supplier": "A", "reason": "UNAVAILABLE" }], B 결과만
+curl -s -X POST 'http://localhost:9090/control/a/mode?value=no-response' # 3. Supplier A 무응답
+curl -s "$Q"                                                            #    3초 뒤 200 + failures: [{ "supplier": "A", "reason": "TIMEOUT" }]
+curl -s -X POST 'http://localhost:9090/control/b/mode?value=error'      # 4. B도 장애 → 전부 실패
+curl -s -i "$Q"                                                         #    503 + Retry-After: 5
+curl -s -X POST 'http://localhost:9090/control/a/mode?value=normal'     # 5. 복구
+curl -s -X POST 'http://localhost:9090/control/b/mode?value=normal'
+curl -s "$Q&includeSoldOut=true"                                        # 6. 예약 불가(Namsan, availableRooms 0)도 포함
 ```
 
 ## 4. 구현 범위
@@ -137,11 +145,11 @@ curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # 복구
 |---|---|---|
 | 표준 숙박 상품 모델·매핑 저장 | 구현 (매핑 테이블·크론잡 델타·인메모리 로드). 표준 모델의 재고·요금 부분은 검색 API와 함께 | [stay-model.md](docs/stay-model.md) |
 | Supplier 연동 어댑터 | 구현 (① 숙소 목록). ② 재고·요금 조회는 검색 API와 함께 | [architecture.md](docs/architecture.md) |
-| 통합 검색 API | 진행 전 | [stay-search-api.md](docs/stay-search-api.md) |
-| 연동 견고성 (타임아웃·부분 실패·실패 판정 통일) | 진행 전 | [architecture.md](docs/architecture.md) |
-| Mock Supplier | 진행 전 | [architecture.md](docs/architecture.md) |
-| 연동 지표·모니터링 설계 (권장) | 진행 전 | [architecture.md](docs/architecture.md) |
-| 재시도·서킷 브레이커 (선택, Resilience4j) | 진행 전 | [architecture.md](docs/architecture.md) |
+| 통합 검색 API | 구현 (병렬 조회·정규화·병합·연박 판정·예약 불가 제외·인원 필터·부분 실패 표현) | [stay-search-api.md](docs/stay-search-api.md) |
+| 연동 견고성 (타임아웃·부분 실패·실패 판정 통일) | 구현 | [architecture.md](docs/architecture.md) |
+| Mock Supplier | 구현 (정상·장애·무응답 모드) | [architecture.md](docs/architecture.md) |
+| 연동 지표·모니터링 설계 (권장) | 알림 규칙은 설계, 지표 기록은 진행 중 | [architecture.md](docs/architecture.md) |
+| 재시도·서킷 브레이커 (선택, Resilience4j) | 재시도는 구현(크론잡 고정 간격, 검색 즉시 1회). 서킷 브레이커는 설계만 | [architecture.md](docs/architecture.md) |
 | 요금/재고 캐시 전략 (선택) | 설계만. 목표 구조는 상시 운영하는 관리형 Redis 공유 캐시. 공급사당 초당 1회 시작, 429는 로그 + 지수 백오프 후 감속 신호 | [architecture.md](docs/architecture.md) |
 <!-- 그 밖의 선택 구현은 진행한 항목만 추가: 상태는 구현 / 설계만 / 미구현 -->
 

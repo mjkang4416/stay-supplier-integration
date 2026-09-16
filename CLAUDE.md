@@ -49,7 +49,7 @@
 - `stay/` - 표준 형태 (`SupplierHotel`, `SupplierRoomType`)
 - `mapping/` - 매핑 엔티티, MyBatis 매퍼(XML은 `resources/mapper/`), `MappingSyncJob`(크론잡 델타), `MappingSyncRunner`(sync 프로필), `MappingRegistry`·`MappingRegistryLoader`(인메모리, 기동 시·04:30 로드)
 - `config/` - 설정 바인딩·빈 등록 (`SupplierClientConfig`, `MappingConfig`, `SchedulingConfig`)
-- `search/` - 통합 검색 API (예정)
+- `search/` - 통합 검색 API (`StaySearchController`, `StaySearchService`, 요청·응답·오류 응답)
 
 ## Docs (작업 전에 해당 문서를 읽을 것)
 
