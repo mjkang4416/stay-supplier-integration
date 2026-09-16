@@ -26,6 +26,9 @@
 ### API 문서
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 
+### 스킬 (`.claude/skills/`)
+- `run-local` 로컬 실행 순서, `query-mapping` 매핑 테이블 조회, `test-search-api` 검색 API 확인 순서, `mock-fault` Mock 장애 모드 전환
+
 ## 아키텍처 개요
 
 여러 외부 숙박 공급사(Supplier)의 상품을 자사 표준 숙박 상품 모델로 통합하고, 통합 검색 API로 제공하는 연동 백엔드다.

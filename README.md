@@ -85,6 +85,7 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 ├── mise.toml                       # JDK 21 고정
 ├── compose.yaml                    # 로컬 MySQL 8.4
 ├── docker/mysql/conf.d/my.cnf      # MySQL 설정 (utf8mb4, UTC)
+├── .claude/skills/                 # 반복 작업 스킬 (run-local, query-mapping, test-search-api, mock-fault)
 ├── src/                            # 본 애플리케이션 (:8080)
 └── mock-supplier/                  # Mock Supplier (:9090). 본 앱과 코드 참조 없음
     └── src/main/resources/responses/   # 공급사 A·B 정상 응답 JSON
