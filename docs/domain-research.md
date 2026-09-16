@@ -147,6 +147,14 @@
 
 공개된 값이 초당 0.8~10회 범위라, 공급사당 초당 1회에서 시작하면 그 아래쪽이에요. 429를 받았을 때 물러나는 시간의 상한(60초)은 Booking.com의 1분 차단에 맞췄어요. 어느 공급사도 운영 한도를 공개 문서에 고정하지 않고 계정·계약별로 정하므로, 설계에서도 한도는 설정값으로 두고 실측으로 맞춰요.
 
+### 검색 응답 시간 기준
+
+캐시가 비었을 때 사용자를 얼마나 기다리게 할지 정하려고 봤어요. Google의 모바일 조사에서는 페이지가 3초를 넘기면 방문의 53%가 이탈하고, 둘 중 하나는 2초 안을 기대해요. 여행 검색은 상류(공급사) 응답이 느린 걸 전제로 하는 도메인이라, 메타서치는 먼저 나온 결과를 바로 보여 주고 나머지를 이어 붙이는 방식을 써요. Skyscanner의 항공 실시간 요금 API는 `/create`가 캐시된 일부 결과를 먼저 돌려주고 `/poll`을 완료 상태가 될 때까지 반복 호출하게 되어 있고, "첫 결과와 마지막 결과 사이 시간 편차가 크다"고 문서에 적혀 있어요. 그래서 우리 설계는 응답 예산 3초에서 끊어 부분 결과 + `pending`으로 응답하고, 캐시 전체 복구(1,000개 기준 5초)는 예외 케이스(Redis 장애)에서만 받아들여요.
+
+### 매진 상품 노출 관행
+
+예약 불가 상품을 응답에서 뺄지 재고 0으로 보여 줄지 정하려고 봤어요. 소비자 화면(Booking.com·Agoda·Expedia 계열)은 매진 숙소를 "Sold out on your dates", "Just missed it" 같은 문구와 함께 검색 결과에 남겨요. 희소성 연출이 목적이고, 소비자 단체(Consumers' Checkbook) 조사에서는 "방이 거의 없다"는 경고 상당수가 과장이라고 지적됐어요. 희소성 문구가 예약 의도에 미치는 영향을 다룬 학술 연구도 있어요. 반면 공급사·집계 API(Expedia Rapid Shopping API)는 예약 가능한 객실만 돌려주고, 매진을 어떻게 보여 줄지는 그 API를 쓰는 화면이 정해요. 국내 숙박 앱의 매진 표시 방식은 공개 자료를 찾지 못했어요. 우리 API는 앱 백엔드가 쓰는 집계 API라 B2B 관행(기본 제외)을 따르고, 화면이 매진 표시를 원하면 옵션으로 켤 수 있게 했어요.
+
 ### 이용이 가장 적은 시간대
 
 매핑 sync처럼 하루 1회 도는 작업은 소비자 접근이 적은 시간대에 두려고 조사했어요.
@@ -173,10 +181,13 @@
 - "여러 공급사 중 싼 쪽만 보여주기"는 기본 동작이 아니에요. 조건이 다른 상품을 가격만으로 비교하게 되기 때문이에요. 병합은 선택 항목으로 두고, 기본은 공급사별로 따로 노출해요. 병합을 하더라도 조식 같은 조건 차이를 함께 다뤄야 해요.
 - 나중에 병합하거나 비교하려면 표준 모델에 조식 포함 여부, 세금 포함 총액, 숙소명이 남아 있어야 해요.
 - 공급사 한 곳이 실패해도 나머지 결과로 응답해야 하고, B의 본문 코드 실패를 A의 HTTP 실패와 같은 실패로 다뤄야 해요.
-- 정적 정보(숙소·객실 타입)는 DB에 저장하고 하루 1회 갱신해요. 동적 정보(재고·요금)는 저장하지 않고 검색마다 호출해요. 캐시는 선택 항목으로 두고, 하더라도 짧은 TTL과 예약 직전 재확인을 전제로 해요.
+- 정적 정보(숙소·객실 타입)는 DB에 저장하고 하루 1회 갱신해요. 동적 정보(재고·요금)는 DB에 저장하지 않아요. 안내 문서의 기본 흐름은 검색마다 호출하는 것이고, 캐시는 선택 항목이에요. 우리는 검색 응답 시간 때문에 Redis에 미리 채우는 캐시를 두고, 검색 시점 직접 호출은 예약 직전 재확인(`fresh=true`)과 캐시가 비었을 때로 한정했어요.
+- 예약 불가 상품은 집계 API 관행대로 기본 제외하고, 매진 노출은 화면이 옵션으로 켜요.
 
 ## 6. 참고 자료
 - 재고 갱신 소프트웨어 상한: [Cloudbeds API FAQ (property당 초당 5회)](https://developers.cloudbeds.com/docs/faq), [Booking.com Connectivity APIs (엔드포인트별 제한, 값 비공개)](https://developers.booking.com/connectivity/docs)
+- 검색 응답 시간: [Marketing Dive, Google: 53% of mobile users abandon sites that take over 3 seconds to load](https://www.marketingdive.com/news/google-53-of-mobile-users-abandon-sites-that-take-over-3-seconds-to-load/426070/), [Google AdSense Help, Make your mobile pages load faster](https://support.google.com/adsense/answer/7450973?hl=en), [Skyscanner, Flights Live Prices overview](https://developers.skyscanner.net/docs/flights-live-prices/overview), [Skyscanner, Create and poll](https://developers.skyscanner.net/docs/getting-started/create-and-poll)
+- 매진 상품 노출: [Consumers' Checkbook, Travel websites mislead by falsely declaring few hotel rooms remain](https://www.checkbook.org/national/travel-websites-mislead-by-falsely-declaring-few-rooms-remain/), [UX Collective, Only one room left! How Booking.com creates a sense of urgency](https://uxdesign.cc/only-one-room-left-244fa7e1f434), [ScienceDirect, Only one room left! How scarcity cues affect booking intentions](https://www.sciencedirect.com/science/article/abs/pii/S1567422319300870), [Expedia Group, Rapid Shopping API: About this API](https://developers.expediagroup.com/rapid/lodging/shopping/about-shopping-api)
 - 공급사 API 호출 한도: [Booking.com Demand API, Rate limiting](https://developers.booking.com/demand/docs/development-guide/rate-limiting), [Hotelbeds, How to use Content API (Production 4 QPS)](https://developer.hotelbeds.com/documentation/hotels/content-api/how-use-content-api/), [Amadeus for Developers, Hotel APIs tutorial](https://developers.amadeus.com/self-service/apis-docs/guides/developer-guides/resources/hotels/), [Expedia Rapid, About the Shopping API](https://developers.expediagroup.com/rapid/lodging/shopping/about-shopping-api)
 - 이용 시간대: [Priceline, best time to book a hotel (Net Affinity 조사 인용)](https://press.priceline.com/this-is-the-best-time-to-book-a-hotel/), [Loopex Digital, Busiest Hours Online](https://www.loopexdigital.com/blog/busiest-time-online-worldwide), [GrowTraffic, Peak Website Traffic Hours](https://growtraffic.co.uk/what-hours-are-peak-website-traffic-hours/)
 - 점유율·숙박일수·리드타임: [CoStar/STR, U.S. hotel performance 2025](https://www.hotelmanagement.net/data-trends/costar-us-hotel-occupancy-revpar-down-yoy-2025), [SiteMinder, Hotel Booking Trends](https://www.siteminder.com/hotel-booking-trends/), [Hotel Management, SiteMinder 2025 트렌드](https://www.hotelmanagement.net/data-trends/siteminder-domestic-bookings-share-32-pps-2025)

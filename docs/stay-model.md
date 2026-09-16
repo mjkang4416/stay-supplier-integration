@@ -30,7 +30,7 @@
 | `room_type_mapping.hotel_id` | 숙소 upsert가 돌려준 `id` | 같음 | 숙소를 먼저 저장해야 하므로 두 단계 |
 | `roomTypeCode` · `room_type_mapping.supplier_room_type_code` | `roomTypes[].roomTypeCode` | `rooms[].roomId` | 필수. 숙소 안에서만 유일 |
 | `roomTypeName` · `room_type_mapping.room_type_name` | `roomTypes[].roomTypeName` | `rooms[].roomName` | 필수 |
-| `maxOccupancy` · `room_type_mapping.max_occupancy` | `roomTypes[].maxOccupancy` | `rooms[].maxOccupancy` | 없거나 1 미만이면 기본값 대신 NULL(미상)로 저장하고 로그. 검색은 ② 응답의 `maxOccupancy`를 우선 쓰고, 둘 다 없으면 인원 필터를 적용하지 않고 응답의 인원을 비운다 |
+| `maxOccupancy` · `room_type_mapping.max_occupancy` | `roomTypes[].maxOccupancy` | `rooms[].maxOccupancy` | 없거나 1 미만이면 기본값 대신 NULL(미상)로 저장하고 로그. 검색 응답에서는 계약상 필수이므로 ② 응답 값 → 매핑 값 순으로 채우고, 둘 다 없으면 그 객실 타입을 응답에서 제외한다 |
 | `active` | 응답에 없음 | 응답에 없음 | 델타 계산 결과(3.2) |
 | 버리는 것 | 없음 | `resultCode`, `resultMessage` (판정에만 사용) | 공급사 원본은 저장하지 않는다 |
 
