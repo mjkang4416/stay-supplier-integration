@@ -148,7 +148,7 @@ curl -s "$Q&includeSoldOut=true"                                        # 6. 예
 | 통합 검색 API | 구현 (병렬 조회·정규화·병합·연박 판정·예약 불가 제외·인원 필터·부분 실패 표현) | [stay-search-api.md](docs/stay-search-api.md) |
 | 연동 견고성 (타임아웃·부분 실패·실패 판정 통일) | 구현 | [architecture.md](docs/architecture.md) |
 | Mock Supplier | 구현 (정상·장애·무응답 모드) | [architecture.md](docs/architecture.md) |
-| 연동 지표·모니터링 설계 (권장) | 알림 규칙은 설계, 지표 기록은 진행 중 | [architecture.md](docs/architecture.md) |
+| 연동 지표·모니터링 설계 (권장) | 설계만 (지표 정의, Micrometer → Datadog 전송 방식, 알림 규칙, 한도 탐색 절차). 코드에는 실패 로그만 | [architecture.md](docs/architecture.md) |
 | 재시도·서킷 브레이커 (선택, Resilience4j) | 재시도는 구현(크론잡 고정 간격, 검색 즉시 1회). 서킷 브레이커는 설계만 | [architecture.md](docs/architecture.md) |
 | 요금/재고 캐시 전략 (선택) | 설계만. 목표 구조는 상시 운영하는 관리형 Redis 공유 캐시. 공급사당 초당 1회 시작, 429는 로그 + 지수 백오프 후 감속 신호 | [architecture.md](docs/architecture.md) |
 <!-- 그 밖의 선택 구현은 진행한 항목만 추가: 상태는 구현 / 설계만 / 미구현 -->

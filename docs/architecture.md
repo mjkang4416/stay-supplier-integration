@@ -163,17 +163,20 @@ Flux.fromIterable(clients)
 
 ### 4.7 연동 지표·모니터링
 
-구현 상태: 지표 수집은 구현 예정, 알림 규칙과 한도 탐색 절차는 설계만.
+구현 상태: 설계만. 지표 정의, Datadog 전송 방식, 알림 규칙, 한도 탐색 절차를 명세하고 코드에는 넣지 않았다. 안내 문서가 이 항목을 "설계만으로도 가능"으로 두었고, 모니터 자체는 외부 SaaS 설정이라 저장소에서 재현할 수 없기 때문이다. 코드가 남기는 것은 실패 로그(공급사·원인·원본 코드·묶음 크기)뿐이다.
 
-**지표** (Micrometer, 어댑터 호출 지점에서 기록, Actuator `/actuator/metrics`로 노출)
+**지표** (Micrometer. 기록 위치는 `SupplierWebClients`의 ExchangeFilterFunction 한 곳으로 두어 어댑터·새 공급사 코드에 지표 코드가 들어가지 않게 한다)
 
-| 지표 | 타입 | 태그 |
-|---|---|---|
-| `supplier.request` | counter | `supplier`(A/B), `result`(success / timeout / rate_limited / error / invalid_response) |
-| `supplier.request.duration` | timer (p50/p95/p99) | `supplier` |
-| `search.partial_failure` | counter | 실패한 공급사 |
+| 지표 | 타입 | 태그 | 용도 |
+|---|---|---|---|
+| `supplier.request` | timer (건수 + p50/p95/p99) | `supplier`(A/B), `api`(hotels/availability), `result`(success 또는 `FailureReason` 소문자) | 성공률 = success / 전체, 타임아웃 비율 = timeout / 전체, 429 비율 = rate_limited / 전체, 지연 분포 |
+| `search.request` | timer | `outcome`(full / partial / failed) | 부분 실패 비율, 검색 지연 |
+| `mapping.sync` | counter | `supplier`, `result`(success / 원인 / db_failure), `deactivation_held`(true/false) | 크론잡 결과 |
+| `mapping.reload` | counter | `result` | 웹 앱 04:30 리로드 결과 |
+| `supplier.normalize` | counter | `supplier`, `result`(invalid) | 정규화 실패로 버린 항목 수 |
+| `cache.refresh`, `cache.read` (설계) | counter | `supplier`, `result` | Redis 갱신·읽기 실패 |
 
-성공률 = success / 전체, 타임아웃 비율 = timeout / 전체, 429 비율 = rate_limited / 전체로 계산한다.
+**Datadog 전송 방식** (설계): `micrometer-registry-datadog` 의존성과 `management.datadog.metrics.export.api-key`·`step`(예: 30s) 설정만으로 Micrometer가 위 지표를 Datadog API로 밀어 넣는다. 에이전트가 있으면 `statsd` 레지스트리로 로컬 에이전트에 보내는 방식도 같다. 공통 태그 `service`, `env`, `pod`는 `management.metrics.tags.*`로 붙인다. 로컬·테스트에서는 레지스트리를 켜지 않는다.
 
 **알림 규칙** (메트릭 모니터. 임계치는 보수적으로 시작해 관측으로 조정)
 
