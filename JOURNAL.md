@@ -193,32 +193,50 @@ Reactor `Flux.merge`는 하나라도 에러면 전체를 취소하므로, 실패
 
 ### Day 1 - 프로젝트 세팅, Mock Supplier, 매핑, 어댑터
 #### 수행 내용
--
+- Spring Boot 4.0.8 + Java 21(mise) + Gradle Kotlin DSL + MyBatis + MySQL 8.4(Docker) 프로젝트 생성, 개인 계정으로 커밋 설정
+- 산출물 정의(README = 결론, docs = 명세, JOURNAL = 과정)에 맞춰 문서 구조 재편. 문제점을 세 묶음으로 분류하고 구현 항목과 연결, 유스케이스 정의, 테스트 전략 3층 정리
+- 도메인 리서치 원페이저: 공급사 구조, 같은 객실이 여러 공급사에 있는 이유, PMS·RMS·채널 매니저, 요금·재고 변경 주기 조사
+- Mock Supplier 모듈(9090): 부록 스펙대로 A·B 응답 JSON, 모드 전환(정상·장애·무응답)
+- 매핑 설계 착수(정적·동적 분리, 갱신 시점, 식별자 안정성)
 #### 의사결정
-<!-- [선택한 것]: 이유 / 검토했다가 버린 대안과 그 이유 -->
-- 관계형 DB로 MySQL 선택 (처음 세팅은 H2): 이유:
-- 로컬 실행 구성: MySQL은 Docker, 서버는 로컬 실행: 이유:
+- 관계형 DB로 MySQL 선택 (처음 세팅은 H2): 운영 DB와 같은 엔진으로 upsert(`INSERT … ON DUPLICATE KEY UPDATE`)와 유니크 키 동작을 그대로 검증하기 위해. H2는 MySQL 호환 모드가 있어도 upsert 문법이 달라 결과가 갈린다
+- 로컬 실행 구성: MySQL은 Docker, 서버는 로컬 실행: DB는 사람마다 설치 버전이 달라지므로 이미지(8.4 LTS, utf8mb4, UTC)로 고정하고, 서버는 mise·Gradle Wrapper로 이미 고정되어 있어 컨테이너로 감싸면 확인 주기만 느려진다
   - 서버 Docker화(Dockerfile + compose)는 하지 않음. 기본 설계와 로컬 실행 방법만 두고, 필요해지면 추가
 - 문서 구조를 산출물 정의에 맞춰 재편 (설계 의사결정 기록 참고)
+- Mock 구성은 별도 모듈: WireMock·테스트용 컨트롤러와 비교해, 사람이 직접 모드를 바꿔 가며 확인하는 용도라 독립 프로세스가 맞다고 판단. 자동 테스트는 WireMock으로 따로 간다
 #### 막힌 지점과 해결 과정
--
+- Spring Initializr 기본값(4.1.1)이 MyBatis 스타터 호환 범위 밖이라 4.0.8로 내림
+- 개인 GitHub 계정 로그인이 기기 인증 승인 화면을 못 찾아 지연. 승인 후 저장소 로컬 설정으로 계정·이메일·credential helper를 개인 계정에 고정
 #### 포기한 것과 이유
--
+- 별도 PRD: 요구사항 문서가 범위를 정의하고 있어 README 1장이 그 역할을 대신
+- 서버 Docker화: 위 의사결정 참고
 #### 참고 자료
--
+- 도메인 리서치 출처는 docs/domain-research.md 6장
 
-### Day 2 - 통합 검색 API, 연동 견고성, 연동 지표
+### Day 2 - 설계 확정, 매핑·어댑터·검색 구현
 #### 수행 내용
--
+- 설계를 로컬 도면(HTML)에서 먼저 닫고 코드로 옮김. 매핑(크론잡·델타·인메모리), 요금·재고 캐시(미리 채우기, 초당 4회, 5분 주기), 어댑터 경계·실패 판정 통일, 검색(연박 판정·예약 불가·부분 실패·대량 숙소)
+- 구현 커밋 순서: 매핑 스키마·매퍼 → 공급사 설정 → WebClient → 숙소 목록 어댑터 A·B → 크론잡 델타·레지스트리 → sync 러너·기동/04:30 로드 → 재고·요금 어댑터 → 통합 검색 API
+- Mock을 띄우고 sync 프로필로 매핑 3건을 넣은 뒤 검색을 정상·A 장애·A 무응답·전부 장애·매진 포함·잘못된 요청 순으로 확인
+- 스킬 4개(run-local, query-mapping, test-search-api, mock-fault)
 #### 의사결정
-<!-- [선택한 것]: 이유 / 검토했다가 버린 대안과 그 이유 -->
--
+- 각 항목의 선택지와 이유는 위 "설계 의사결정 기록"에 있다. 오늘 확정한 것: 캐시 어사이드 검토 후 폐기(검토 20), 허용 속도 1→8→4회(검토 22), 예약 불가 기본 제외 + includeSoldOut, 최대 인원 미상 저장·응답 필수, 어댑터는 호출과 번역까지
+- 연동 지표는 코드로 넣지 않고 설계만: 안내 문서가 "설계만으로도 가능"으로 두었고 모니터는 외부 SaaS 설정이라 저장소에서 재현되지 않는다. 지표 정의·Datadog 전송 방식·알림 규칙을 architecture 4.7에 명세
 #### 막힌 지점과 해결 과정
--
+- Testcontainers 2.x는 모듈명이 `testcontainers-mysql`, `testcontainers-junit-jupiter`로 바뀌어 `org.testcontainers:mysql`이 안 잡힘. `./gradlew dependencyManagement`로 관리 버전을 확인해 해결. 제네릭 `MySQLContainer<?>`는 deprecated라 `org.testcontainers.mysql.MySQLContainer`로 교체
+- Spring Boot 4의 HTTP 클라이언트 설정 API가 `HttpClientSettings` + `ClientHttpConnectorBuilder.reactor()`로 바뀜. jar를 `javap`으로 열어 시그니처 확인
+- 멀티 모듈에서 `./gradlew bootRun`이 Mock 모듈의 bootRun까지 실행해 9090 포트 충돌. 문서 명령을 `./gradlew :bootRun`으로 고침
+- 8080을 다른 로컬 프로세스가 점유해 앱이 못 뜸. `--server.port=8081`로 확인하고 README에 포트 변경법 기재
+- 커밋 메시지 제목과 본문 사이 빈 줄을 빠뜨려 제목이 첫 문단까지 이어짐. 두 커밋을 다시 만듦
+- WireMock 최신이 4.0 beta라 안정판 3.13.2를 고정
+- 금지어 hook이 README 문구 하나를 잡아 표현을 고침. hook은 로컬에만 있고 저장소에는 없다
 #### 포기한 것과 이유
--
+- 연동 지표 코드(Micrometer 필터·Actuator): 위 의사결정 참고
+- 서킷 브레이커: 선택 항목. 값(최근 10회 중 5회, 30초, 반개방 1회)만 설계
+- 요금·재고 캐시(Redis)를 오늘 구현: 필수 흐름을 먼저 끝내기 위해 내일 오전 최소 구현으로 미룸. 날짜 계층 주기·핫 리스트·리더 선출은 확장 설계로만
+- 검색된 조합만 채우는 캐시 어사이드: 콜드 지연 때문에 폐기(검토 20)
 #### 참고 자료
--
+- 공급사 API 한도, 검색 응답 시간, 매진 노출 관행 출처는 docs/domain-research.md 6장
 
 ### Day 3 - 문서, 마무리
 #### 수행 내용
@@ -250,7 +268,22 @@ Reactor `Flux.merge`는 하나라도 에러면 전체를 취소하므로, 실패
 - 의존성(wiremock-standalone, spring-boot-testcontainers, testcontainers mysql·junit-jupiter)은 테스트를 작성하는 시점에 추가한다.
 
 ### 결과
-<!-- 실행 명령, 통과 여부, 검증한 시나리오(정상 / 공급사 장애 / 무응답 등) -->
+
+`./gradlew test` 59개 통과 (2026-09-16 기준. Docker가 떠 있어야 Testcontainers 통합 테스트가 돈다).
+
+| 층 | 테스트 | 개수 | 검증한 것 |
+|---|---|---|---|
+| 통합 (MySQL 컨테이너) | MappingMapperIntegrationTest | 4 | 같은 코드 재저장 시 id 유지, 공급사가 다르면 다른 id, 비활성 후 복귀 시 id 유지, 객실 타입 코드는 숙소 안에서만 유일 |
+| 통합 (MySQL 컨테이너) | MappingSyncJobIntegrationTest | 6 | 첫 실행 삽입, 델타(변경·추가·사라짐)와 식별자 유지, 실패 공급사 건너뛰기, 재시도·비재시도, 절반 초과 사라짐 보류 |
+| 단위 | MappingRegistryTest, MappingRegistryLoaderTest, MappingSyncRunnerTest | 7 | 스냅샷 조회, 기동 로드 실패 시 기동 실패, 리로드 실패 시 유지 + 5분 재시도, 종료 코드 |
+| 단위 | SupplierPropertiesTest, SupplierWebClientsTest | 4 | 설정 바인딩, 누락 설정 시 기동 실패 |
+| 어댑터 HTTP (WireMock) | SupplierAClientTest | 13 | 목록·재고 정규화(429,000 / 302,500), X-Api-Key, 상태 코드 판정, Retry-After, 타임아웃, 연결 실패, 50개 분할, 묶음 부분·전부 실패, 날짜 수 불일치, 0건 vs 구조 누락 |
+| 어댑터 HTTP (WireMock) | SupplierBClientTest | 10 | HTTP 200 + resultCode 실패 판정, 모르는 코드, data 누락, 0건, 최대 인원 미상, 재고·요금 정규화(452,000) |
+| 단위 | StaySearchServiceTest | 10 | 병합·내부 id 변환, 예약 불가 제외·포함, 인원 필터, 최대 인원 출처, 부분 실패·묶음 실패 표시, 전부 실패 예외, 즉시 1회 재시도(타임아웃 제외), 미매핑 코드, 요청 검증 |
+| 웹 슬라이스 | StaySearchControllerTest | 4 | 200 JSON 형태, 400(검증·누락·형식), 503 + Retry-After |
+| 컨텍스트 | StaySupplierIntegrationApplicationTests | 1 | 로컬 MySQL로 기동 |
+
+Mock Supplier로 직접 확인한 시나리오(README 3장 동작 확인과 같음): 정상 200(8ms) → A 장애 200 + failures UNAVAILABLE(0.2초, 재시도 포함) → A 무응답 200 + failures TIMEOUT(3.0초) → 전부 장애 503 + Retry-After → includeSoldOut으로 예약 불가 포함 → 체크아웃 < 체크인 400. sync 프로필 실행으로 매핑 3건 저장과 종료 코드 0 확인.
 
 ## AI 활용 기록
 
@@ -331,6 +364,60 @@ Reactor `Flux.merge`는 하나라도 에러면 전체를 취소하므로, 실패
 - 이유:
 - 관련: docs/domain-research.md
 
+- 물어본 것: 인스턴스가 여러 대일 때 요금·재고 캐시를 어떻게 둘지, 갱신 주기와 초당 호출 횟수의 근거
+- 답변 요지: 처음에는 Redis 도입을 429 모니터 신호에 걸자고 했고, 나중에는 검색된 조합만 채우는 캐시 어사이드를 제안함. 허용 속도는 1회 → 8회를 제안
+- 판단: 거부 후 수정. Redis는 상시 운영이고 429는 속도 조정 신호일 뿐이라고 바로잡음. 캐시 어사이드는 새 기간을 처음 검색한 사용자가 초 단위를 기다려 폐기하고 미리 채우기로 되돌림. 8회는 예외 케이스(Redis 장애)를 위한 값이라 공개 운영 한도 4회로 시작하고 최악 5초 복구를 받아들임
+- 이유: 검색 응답 시간(ms)이 기준이고, 캐시가 완전히 비는 것은 Redis 장애뿐이라 그때의 부담으로 평소 429 위험을 키울 이유가 없음
+- 관련: docs/architecture.md 4.8, 설계 의사결정 기록 "요금/재고 캐시" 검토 18·20·22
+
+- 물어본 것: 어댑터가 응답을 가공해 DB 저장까지 해야 하는지, 서비스 계층으로 나누는 게 맞는지
+- 답변 요지: 어댑터는 호출과 번역까지, 저장·병합·캐시·재시도는 서비스. 같은 어댑터를 크론잡(DB)·검색(응답)·실시간 재확인이 다르게 쓰고, 검색이 DB에 쓰면 "요금·재고 저장 금지"를 어긴다는 비교
+- 판단: 수용
+- 이유: 바뀌는 이유(공급사 스펙 vs 우리 저장 규칙)가 달라 한 클래스에 두면 둘 다 그 클래스를 고치게 됨
+- 관련: docs/architecture.md 4.1, 설계 의사결정 기록 "어댑터 반환 형태와 실패 판정"
+
+- 물어본 것: 예약 불가 상품을 응답에서 뺄지 0으로 노출할지, 기존 숙박 앱 관행 조사
+- 답변 요지: 소비자 화면은 매진을 희소성 문구와 함께 남기고(소비자 단체가 과장이라고 지적), 공급사·집계 API는 예약 가능한 것만 돌려줌. 국내 앱은 공개 자료 없음
+- 판단: 수용. 집계 API 관행(기본 제외)을 따르고 매진 노출은 옵션으로
+- 이유: 이 API는 앱 백엔드가 쓰는 집계 API이고 프론트엔드는 비범위
+- 관련: README 5.4, docs/domain-research.md
+
+- 물어본 것: 공급사가 최대 인원을 안 줄 때, B가 성공 코드인데 데이터가 없을 때의 처리
+- 답변 요지: 처음 초안은 "그 객실 타입을 저장하지 않음", "0000 + 데이터 없음은 실패"
+- 판단: 수정. 객실 타입은 저장하고 값만 미상으로 두되 응답 계약에 최대 인원이 필수라 둘 다 없으면 응답에서 제외. B는 빈 목록(정상 0건)과 구조 누락(깨진 응답)을 구분
+- 이유: 값이 없다고 상품을 버리면 식별자 안정성이 깨지고, 0건을 실패로 보면 정상을 장애로, 구조 누락을 0건으로 보면 장애를 정상으로 처리하게 됨
+- 관련: docs/architecture.md 4.1·4.2, docs/stay-model.md 2.1
+
 ### 구현
 
+- 물어본 것: Testcontainers 의존성이 안 잡히는 원인
+- 답변 요지: 2.x에서 모듈명이 `testcontainers-mysql`, `testcontainers-junit-jupiter`로 바뀜. `./gradlew dependencyManagement`로 관리 버전 확인
+- 판단: 수용
+- 이유: 공식 관리 버전 목록에서 직접 확인
+- 관련: build.gradle.kts
+
+- 물어본 것: Spring Boot 4에서 공급사별 WebClient에 연결·응답 타임아웃과 헤더를 적용하는 방법, WebClient와 어댑터의 개념과 대안
+- 답변 요지: `HttpClientSettings` + `ClientHttpConnectorBuilder.reactor()`로 공급사별 커넥터를 만들고 `X-Api-Key`는 기본 헤더로. 대안(WebClient 하나 공유, 어댑터별 생성, HTTP 서비스 클라이언트, WebFlux 전면, 가상 스레드)을 비교
+- 판단: 수용
+- 이유: 연결 타임아웃은 커넥터 수준이라 공급사별로 다르게 주려면 어차피 커넥터가 갈림. 가상 스레드는 블로킹 클라이언트용이라 WebClient 지정 요구와 맞지 않음
+- 관련: src/main/java/com/staysupplier/supplier/SupplierWebClients.java, README 5.6
+
+- 물어본 것: 논블로킹 병렬에서 공급사 하나가 실패해도 나머지 결과가 돌아오는지, 재시도 정책과 응답 코드
+- 답변 요지: `Flux.merge`는 기본이 하나라도 에러면 전체 취소라, 실패 변환을 공급사별 체인 안에 두고 병합. 재시도는 호출자별(검색 즉시 1회, 크론잡 고정 간격), 응답 코드는 일부 실패 200 + failures, 전부 503
+- 판단: 수정. 크론잡 재시도는 지수 백오프 대신 고정 간격(30초 × 3회)으로. 지수 백오프는 Redis 갱신 잡의 429에만
+- 이유: 크론잡은 사람이 안 기다리고 호출이 두 번뿐이라 단순한 쪽이 로그 읽기에도 낫다
+- 관련: docs/architecture.md 4.4·4.6
+
 ### 테스트
+
+- 물어본 것: Mock Supplier 모듈과 WireMock의 차이, 테스트 3층 구성
+- 답변 요지: Mock 모듈은 사람이 모드를 바꿔 가며 확인하는 독립 프로세스, WireMock은 테스트가 직접 띄우는 가짜 서버. 단위·어댑터 HTTP·통합(Testcontainers) 3층 제안
+- 판단: 수용
+- 이유: 자동 테스트가 별도 프로세스에 의존하지 않아야 `./gradlew test`만으로 돈다
+- 관련: JOURNAL "테스트 전략과 결과"
+
+- 물어본 것: 어댑터·크론잡·검색 테스트 작성
+- 답변 요지: WireMock 스텁으로 예제 데이터 정규화·상태 코드·resultCode·타임아웃·연결 실패·50개 분할·부분 실패를, MySQL 컨테이너로 델타·재시도·보류를, 가짜 어댑터로 검색 병합·필터·실패 표현을 검증
+- 판단: 수용. 묶음 부분 실패 테스트는 스텁이 중복돼 있어 정리함
+- 이유: 기대값(429,000 / 302,500 / 452,000, 재고 최솟값 1·0)이 스펙 예제 계산과 일치
+- 관련: src/test
