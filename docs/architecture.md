@@ -278,9 +278,11 @@ MySQL은 Docker, Mock Supplier는 별도 프로세스, 애플리케이션은 로
 ```bash
 docker compose up -d                                          # MySQL
 ./gradlew :mock-supplier:bootRun                              # Mock (9090)
-./gradlew bootRun --args='--spring.profiles.active=sync'      # 매핑 갱신 잡 1회 실행 후 종료
-./gradlew bootRun                                             # 웹 앱 (8080)
+./gradlew :bootRun --args='--spring.profiles.active=sync'     # 매핑 갱신 잡 1회 실행 후 종료 (종료 코드: 전부 성공 0, 공급사 실패 1)
+./gradlew :bootRun                                            # 웹 앱 (8080). ':' 없이 실행하면 Mock 모듈까지 같이 뜬다
 ```
+
+sync 프로필은 `spring.main.web-application-type=none`으로 웹 서버 없이 뜨고, `MappingSyncRunner`가 잡을 돌린 뒤 `ExitCodeGenerator`로 종료 코드를 정한다. 웹 앱은 `MappingRegistryLoader`가 웹 서버가 뜨기 전에 DB에서 매핑을 올리고(실패하면 기동 실패), `mapping.reload.cron`(04:30 Asia/Seoul)에 다시 읽는다. 리로드 실패는 기존 인메모리를 유지하고 5분 뒤 한 번 더 시도한다.
 
 ### 6.2 운영 (설계)
 같은 이미지를 두 워크로드로 배포한다.
@@ -288,7 +290,7 @@ docker compose up -d                                          # MySQL
 | 워크로드 | 프로필 | 역할 |
 |---|---|---|
 | Deployment (팟 N개) | 기본 | 검색 API. 기동 시 DB → 인메모리(숙소·객실 타입 매핑), 매일 04:30 Asia/Seoul 한 번 더 로드 |
-| CronJob (`0 4 * * *`, `timeZone: Asia/Seoul`) | `sync` | 매핑 갱신 잡 1회 실행. 수동 실행은 `kubectl create job --from=cronjob/<name>` |
+| CronJob (`0 4 * * *`, `timeZone: Asia/Seoul`) | `sync` | 매핑 갱신 잡 1회 실행. 공급사 실패 시 종료 코드 1 → `backoffLimit: 2`로 최대 3회 실행(upsert라 재실행 안전). 수동 실행·첫 배포는 `kubectl create job --from=cronjob/<name>` |
 
 ```yaml
 # 예시 매니페스트 (설계)
@@ -301,6 +303,8 @@ spec:
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
+      backoffLimit: 2                 # 공급사·DB 실패로 종료 코드 1이면 10초·20초 뒤 재실행
+      activeDeadlineSeconds: 1200     # 04:30 웹 앱 리로드 전에 끝나도록 20분 상한
       template:
         spec:
           restartPolicy: Never
@@ -309,7 +313,7 @@ spec:
               image: <app-image>
               args: ["--spring.profiles.active=sync"]
 ```
-`concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 한다.
+`concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 한다. 앱 안의 재시도(고정 30초 × 3회)는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡는다. 잡 실패 이벤트와 마지막 성공 시각(25시간 초과)은 메트릭 모니터로 알린다(4.7).
 
 ## 7. 테스트 구성
 <!-- 테스트 종류별 범위, 사용하는 DB·Mock, 실행 명령 -->

@@ -99,13 +99,14 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 - Docker (로컬 MySQL 8.4 실행)
 
 ### 실행
-터미널 세 개가 필요하다. MySQL은 Docker로, Mock Supplier와 애플리케이션은 각각 로컬 프로세스로 띄운다.
+터미널 세 개가 필요하다. MySQL은 Docker로, Mock Supplier와 애플리케이션은 각각 로컬 프로세스로 띄운다. 처음 띄울 때는 매핑 테이블이 비어 있으므로 3번(매핑 갱신 잡)을 한 번 돌려 공급사 숙소 목록을 DB에 넣은 뒤 애플리케이션을 띄운다.
 ```bash
-docker compose up -d                 # 1. MySQL (Docker)
-./gradlew :mock-supplier:bootRun     # 2. Mock Supplier (포트 9090)
-./gradlew bootRun                    # 3. 애플리케이션 (포트 8080)
+docker compose up -d                                        # 1. MySQL (Docker)
+./gradlew :mock-supplier:bootRun                            # 2. Mock Supplier (포트 9090, 별도 터미널)
+./gradlew :bootRun --args='--spring.profiles.active=sync'   # 3. 매핑 갱신 잡 1회 실행 후 종료 (처음 한 번, 이후는 크론잡 역할)
+./gradlew :bootRun                                          # 4. 애플리케이션 (포트 8080)
 ```
-<!-- sync 러너 구현 후 기입: 처음 띄우면 매핑 테이블이 비어 있으므로 sync 프로필로 한 번 실행해 공급사 숙소 목록을 DB에 넣은 뒤 애플리케이션을 띄운다 -->
+`bootRun` 앞의 `:`는 루트 모듈만 실행한다는 뜻이다. `:` 없이 `./gradlew bootRun`을 치면 Mock 모듈의 bootRun까지 같이 실행된다. 3번은 공급사 하나라도 실패하면 종료 코드 1로 끝난다.
 - `./gradlew build`: 컴파일 + 테스트
 - API 문서(Swagger UI): http://localhost:8080/swagger-ui.html
 - Mock Supplier 상세: [architecture.md 5장](docs/architecture.md)
@@ -134,8 +135,8 @@ curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # 복구
 
 | 항목 | 상태 | 문서 |
 |---|---|---|
-| 표준 숙박 상품 모델·매핑 저장 | 진행 전 | [stay-model.md](docs/stay-model.md) |
-| Supplier 연동 어댑터 | 진행 전 | [architecture.md](docs/architecture.md) |
+| 표준 숙박 상품 모델·매핑 저장 | 구현 (매핑 테이블·크론잡 델타·인메모리 로드). 표준 모델의 재고·요금 부분은 검색 API와 함께 | [stay-model.md](docs/stay-model.md) |
+| Supplier 연동 어댑터 | 구현 (① 숙소 목록). ② 재고·요금 조회는 검색 API와 함께 | [architecture.md](docs/architecture.md) |
 | 통합 검색 API | 진행 전 | [stay-search-api.md](docs/stay-search-api.md) |
 | 연동 견고성 (타임아웃·부분 실패·실패 판정 통일) | 진행 전 | [architecture.md](docs/architecture.md) |
 | Mock Supplier | 진행 전 | [architecture.md](docs/architecture.md) |

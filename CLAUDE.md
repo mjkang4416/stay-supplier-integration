@@ -15,7 +15,8 @@
 - `docker compose down -v` - MySQL 종료 + 데이터 삭제
 - 3306 포트가 이미 사용 중이면 `MYSQL_PORT=3307 docker compose up -d`, 애플리케이션은 `DB_PORT=3307`로 실행
 - `./gradlew build` - 컴파일과 전체 테스트
-- `./gradlew bootRun` - 애플리케이션 실행 (기본 포트 8080)
+- `./gradlew :bootRun` - 애플리케이션 실행 (기본 포트 8080). `:` 없이 실행하면 Mock 모듈까지 같이 뜨므로 반드시 붙인다
+- `./gradlew :bootRun --args='--spring.profiles.active=sync'` - 매핑 갱신 잡 1회 실행 후 종료 (처음 띄울 때 한 번 필요)
 - `./gradlew :mock-supplier:bootRun` - Mock Supplier 실행 (포트 9090, 별도 터미널)
 
 ### 테스트
@@ -46,8 +47,8 @@
 - `supplier/` - `SupplierClient` 인터페이스, `Supplier` enum, `SupplierProperties`(설정), `SupplierWebClients`(공급사별 WebClient), `FailureReason`·`SupplierCallException`·`SupplierFailures`(실패 판정 통일)
 - `supplier/a`, `supplier/b` - 공급사별 어댑터와 전용 응답 형식(package-private). 새 공급사는 `supplier/c`
 - `stay/` - 표준 형태 (`SupplierHotel`, `SupplierRoomType`)
-- `mapping/` - 매핑 엔티티, MyBatis 매퍼(XML은 `resources/mapper/`), 크론잡·인메모리 레지스트리(예정)
-- `config/` - 설정 바인딩·빈 등록 (`SupplierClientConfig`)
+- `mapping/` - 매핑 엔티티, MyBatis 매퍼(XML은 `resources/mapper/`), `MappingSyncJob`(크론잡 델타), `MappingSyncRunner`(sync 프로필), `MappingRegistry`·`MappingRegistryLoader`(인메모리, 기동 시·04:30 로드)
+- `config/` - 설정 바인딩·빈 등록 (`SupplierClientConfig`, `MappingConfig`, `SchedulingConfig`)
 - `search/` - 통합 검색 API (예정)
 
 ## Docs (작업 전에 해당 문서를 읽을 것)
