@@ -5,6 +5,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 
@@ -65,7 +67,7 @@ class AvailabilityRefreshJobTest {
 
 	private AvailabilityRefreshJob job(SupplierClient... clients) {
 		return new AvailabilityRefreshJob(List.of(clients), this.registry, cache,
-				new CacheProperties(true, Duration.ofMinutes(5), 3, 3), CLOCK);
+				new CacheProperties(true, Duration.ofMinutes(5), 3, 3, 5, Duration.ofMillis(1)), CLOCK);
 	}
 
 	@Test
@@ -100,6 +102,66 @@ class AvailabilityRefreshJobTest {
 			assertThat(status.failing()).isTrue();
 			assertThat(status.lastFailureReason()).isEqualTo(FailureReason.TIMEOUT);
 		});
+	}
+
+	@Test
+	void backsOffAndRetriesOnRateLimitButNotOnOtherFailures() {
+		SequenceClient a = new SequenceClient(Supplier.A, List.of(
+				Mono.error(new SupplierCallException(Supplier.A, FailureReason.RATE_LIMITED, "E429")),
+				Mono.error(new SupplierCallException(Supplier.A, FailureReason.RATE_LIMITED, "E429")),
+				Mono.just(new SupplierDailyFetchResult(List.of(offer(Supplier.A, "A-10023", "DLX-TWN", TODAY, 3, 132_000L)), List.of()))));
+		SequenceClient b = new SequenceClient(Supplier.B, List.of(
+				Mono.error(new SupplierCallException(Supplier.B, FailureReason.UNAVAILABLE, "E503")),
+				Mono.just(new SupplierDailyFetchResult(List.of(offer(Supplier.B, "B77120", "R-401", TODAY, 1, 150_000L)), List.of()))));
+
+		job(a, b).refresh();
+
+		assertThat(a.calls()).isEqualTo(3);  // 429 두 번 뒤 성공
+		assertThat(b.calls()).isEqualTo(1);  // 503 은 다음 주기
+		assertThat(template.opsForHash().get("stay:v1:1", "11:20260901")).isEqualTo("3|132000|KRW|0|2");
+		assertThat(cache.status(Supplier.B)).get().satisfies(status -> assertThat(status.failing()).isTrue());
+	}
+
+	private static final class SequenceClient implements SupplierClient {
+
+		private final Supplier supplier;
+
+		private final Deque<Mono<SupplierDailyFetchResult>> responses;
+
+		private int calls;
+
+		SequenceClient(Supplier supplier, List<Mono<SupplierDailyFetchResult>> responses) {
+			this.supplier = supplier;
+			this.responses = new ArrayDeque<>(responses);
+		}
+
+		int calls() {
+			return this.calls;
+		}
+
+		@Override
+		public Supplier supplier() {
+			return this.supplier;
+		}
+
+		@Override
+		public Mono<List<SupplierHotel>> fetchHotels() {
+			return Mono.just(List.of());
+		}
+
+		@Override
+		public Mono<SupplierFetchResult> fetchAvailability(AvailabilityQuery query) {
+			return Mono.just(SupplierFetchResult.empty());
+		}
+
+		@Override
+		public Mono<SupplierDailyFetchResult> fetchDailyAvailability(List<String> hotelCodes, LocalDate from, LocalDate to) {
+			return Mono.defer(() -> {
+				this.calls++;
+				return this.responses.size() > 1 ? this.responses.poll() : this.responses.peek();
+			});
+		}
+
 	}
 
 	private static SupplierDailyOffer offer(Supplier supplier, String hotelCode, String roomTypeCode, LocalDate date,

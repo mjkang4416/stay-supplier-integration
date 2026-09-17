@@ -1,6 +1,7 @@
 package com.staysupplier.cache;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HashMap;
@@ -12,6 +13,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 import com.staysupplier.mapping.MappingRegistry;
 import com.staysupplier.mapping.MappingRegistry.HotelEntry;
@@ -93,8 +95,23 @@ public class AvailabilityRefreshJob {
 			return Mono.just(Outcome.skipped(supplier));
 		}
 		return client.fetchDailyAvailability(codes, from, to)
+			.retryWhen(rateLimitBackoff(supplier))
 			.map(result -> Outcome.success(supplier, result))
 			.onErrorResume(SupplierCallException.class, ex -> Mono.just(Outcome.failure(supplier, ex.getReason())));
+	}
+
+	/**
+	 * 429 만 지수 백오프(1→2→4→… 초, 60초 상한, 최대 5회)로 물러났다 다시 한다. 예산 절반은 SupplierRateLimiter 가 429 마다 적용한다.
+	 * 다른 실패는 다음 주기에 맡긴다. Retry-After 값을 대기에 쓰는 것은 확장 항목이다.
+	 */
+	private Retry rateLimitBackoff(Supplier supplier) {
+		return Retry.backoff(this.properties.rateLimitRetries(), this.properties.rateLimitBackoff())
+			.maxBackoff(Duration.ofSeconds(60))
+			.jitter(0)
+			.filter(error -> error instanceof SupplierCallException ex && ex.getReason() == FailureReason.RATE_LIMITED)
+			.doBeforeRetry(signal -> log.warn("cache refresh supplier={} rate limited, backing off (attempt {})", supplier,
+					signal.totalRetries() + 1))
+			.onRetryExhaustedThrow((spec, signal) -> signal.failure());
 	}
 
 	/** 공급사 코드를 내부 식별자로 바꿔 숙소별 Hash 로 쓴다. 매핑에 없는 코드는 버린다 */
