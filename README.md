@@ -42,10 +42,12 @@ flowchart LR
     subgraph cron["크론잡 (sync 프로필, 매일 04:00)"]
         SYNC["매핑 델타 갱신"]
     end
-    subgraph app["웹 앱"]
+    subgraph app["웹 앱 (팟 N대)"]
         REG["인메모리 매핑"]
-        REFRESH["갱신 잡 (5분마다)<br/>다중 팟은 refresh 프로필 팟 1대"]
         SEARCH["검색 서비스"]
+    end
+    subgraph refresh["갱신 잡 (refresh 프로필, 팟 1대)"]
+        REFRESH["요금·재고 갱신 (5분마다)"]
     end
     DB[("MySQL<br/>매핑만")]
     REDIS[("Redis<br/>요금·재고 캐시, TTL 15분")]
@@ -53,7 +55,7 @@ flowchart LR
 
     LIST --> SYNC --> DB
     DB -->|"기동 시 · 04:30"| REG
-    REG --> REFRESH
+    DB -->|"기동 시 · 04:30"| REFRESH
     REG --> SEARCH
     REFRESH -->|"공급사별 50개 묶음, 초당 4회"| AVAIL
     REFRESH -->|"정규화한 값"| REDIS
@@ -63,7 +65,7 @@ flowchart LR
     SEARCH -->|"병합 + failures"| CLIENT
 ```
 
-매핑은 크론잡이 하루 한 번 MySQL에 저장하고, 요금·재고는 갱신 잡이 5분마다 Redis에 채우며, 검색은 Redis를 먼저 읽고 값이 없는 숙소만 공급사를 불러요. 예약 직전처럼 최신 값이 꼭 필요하면 요청에 `fresh=true`를 붙여 캐시를 건너뛰고 전부 직접 물을 수 있어요. 단계별 기본·대안 흐름은 [architecture.md 3장](docs/architecture.md)에, 노드별 코드 출처와 스토리 재생은 [인터랙티브 로직 지도](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)에 있어요. 아래 그림을 클릭해도 열려요.
+매핑은 크론잡이 하루 한 번 MySQL에 저장하고, 요금·재고는 갱신 잡이 5분마다 Redis에 채우며, 검색은 Redis를 먼저 읽고 값이 없는 숙소만 공급사를 불러요. 크론잡과 갱신 잡은 웹 앱과 같은 이미지를 각각 `sync`·`refresh` 프로필로 띄운 별도 팟이고, 팟이 하나뿐인 로컬에서는 갱신 잡이 웹 앱 안에서 같이 돌아요. 예약 직전처럼 최신 값이 꼭 필요하면 요청에 `fresh=true`를 붙여 캐시를 건너뛰고 전부 직접 물을 수 있어요. 단계별 기본·대안 흐름은 [architecture.md 3장](docs/architecture.md)에, 노드별 코드 출처와 스토리 재생은 [인터랙티브 로직 지도](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)에 있어요. 아래 그림을 클릭해도 열려요.
 
 [![로직 지도 미리보기](docs/images/system-story.png)](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)
 

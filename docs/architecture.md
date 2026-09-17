@@ -13,10 +13,12 @@ flowchart LR
     subgraph cron["sync 프로필 (K8s CronJob, 매일 04:00)"]
         SYNC["MappingSyncJob<br/>델타 저장 후 종료 코드 0/1"]
     end
-    subgraph app["본 앱 (:8080, Spring MVC)"]
+    subgraph app["웹 앱 (:8080, Spring MVC, 팟 N대)"]
         REG["MappingRegistry<br/>인메모리 매핑"]
-        REFRESH["AvailabilityRefreshJob<br/>기동 직후 · 5분마다<br/>다중 팟은 refresh 프로필 팟 1대"]
         SEARCH["StaySearchService"]
+    end
+    subgraph refresh["refresh 프로필 (같은 이미지, 팟 1대)"]
+        REFRESH["AvailabilityRefreshJob<br/>기동 직후 · 5분마다"]
     end
     DB[("MySQL (:3306)<br/>hotel_mapping · room_type_mapping")]
     REDIS[("Redis (:6379)<br/>숙소당 Hash · TTL 15분")]
@@ -24,7 +26,7 @@ flowchart LR
 
     LIST -->|"어댑터 A·B"| SYNC --> DB
     DB -->|"기동 시 · 04:30"| REG
-    REG --> REFRESH
+    DB -->|"기동 시 · 04:30"| REFRESH
     REG --> SEARCH
     REFRESH -->|"어댑터 A·B · 50개 묶음 · 초당 4회"| AVAIL
     REFRESH -->|"정규화한 값"| REDIS
@@ -34,7 +36,7 @@ flowchart LR
     SEARCH -->|"200 + failures / 400 / 503"| CLIENT
 ```
 
-공급사 호출은 전부 어댑터 A·B를 거쳐요. 어댑터는 WebClient로 `X-Api-Key` 헤더를 붙여 부르고, 연결 1초·응답 3초 타임아웃과 공급사당 초당 4회 호출 한도를 적용해요. 크론잡은 같은 이미지를 `sync` 프로필로 띄운 별도 프로세스예요. 노드를 눌러 코드 출처와 상수를 볼 수 있는 [인터랙티브 로직 지도](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)도 있어요. 원본은 `docs/system-story.html`이에요.
+공급사 호출은 전부 어댑터 A·B를 거쳐요. 어댑터는 WebClient로 `X-Api-Key` 헤더를 붙여 부르고, 연결 1초·응답 3초 타임아웃과 공급사당 초당 4회 호출 한도를 적용해요. 크론잡과 갱신 잡은 같은 이미지를 각각 `sync`·`refresh` 프로필로 띄운 별도 프로세스예요. 갱신 잡 팟도 기동 시와 04:30에 DB에서 매핑을 자기 인메모리로 올려요. 팟이 하나뿐인 로컬에서는 갱신 잡이 웹 앱 안에서 같이 돌아요. 노드를 눌러 코드 출처와 상수를 볼 수 있는 [인터랙티브 로직 지도](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)도 있어요. 원본은 `docs/system-story.html`이에요.
 
 - 호출 방향은 항상 본 앱 → 바깥이에요. 공급사·MySQL·Redis는 본 앱을 호출하지 않아요.
 - 요금·재고는 TTL이 있는 Redis 캐시와 응답에만 있고 MySQL에는 매핑만 있어요.
