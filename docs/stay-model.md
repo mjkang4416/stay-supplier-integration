@@ -4,68 +4,44 @@
 
 ## 1. 표준 숙박 상품 모델
 
-단위는 숙소 → 객실 타입 → 날짜별 재고·요금이에요. 어댑터가 공급사 응답을 `stay` 패키지의 이 형태로 바꾸고, 식별자는 공급사 코드 그대로 두며 내부 식별자는 3장의 매핑이 붙여요. 검색 응답의 형태는 [stay-search-api.md](stay-search-api.md).
+단위는 숙소 → 객실 타입 → 날짜별 재고·요금이에요. 어댑터가 공급사 응답을 `stay` 패키지의 아래 형태로 바꾸고, 식별자는 공급사 코드 그대로 두며 내부 식별자는 3장의 매핑이 붙여요. 요금은 세금 포함 총액, 재고는 날짜별 예약 가능 객실 수예요. 무엇을 살리고 버렸는지와 그 이유는 [README 4.1](../README.md)에, 검색 응답 형태는 [stay-search-api.md](stay-search-api.md)에 있어요.
 
-### 1.1 숙소 (`SupplierHotel`)
-
-| 필드 | 타입 | 의미 |
-|---|---|---|
-| `supplier` | `A` / `B` | 출처 공급사. 공급사가 다르면 같은 호텔도 다른 숙소 |
-| `hotelCode` | string | 공급사 숙소 코드. A는 `hotelCode`, B는 `propertyId`. 공급사 안에서만 유일 |
-| `hotelName` | string | 숙소명. 하루 1회 갱신 |
-| `roomTypes` | list | 객실 타입 목록. ① 숙소 목록에서만 와요 |
-
-내부 숙소 식별자 `hotelId`는 `hotel_mapping`이 배정해요.
-
-### 1.2 객실 타입 (`SupplierRoomType`)
-
-| 필드 | 타입 | 의미 |
-|---|---|---|
-| `roomTypeCode` | string | 공급사 객실 타입 코드. A는 `roomTypeCode`, B는 `roomId`. 숙소 안에서만 유일 |
-| `roomTypeName` | string | 객실 타입명 |
-| `maxOccupancy` | int, null 허용 | 객실 1실 최대 수용 인원, 성인과 아동 합산. 공급사가 주지 않으면 null로 미상 |
-
-내부 객실 타입 식별자 `roomTypeId`는 `room_type_mapping`이 배정해요.
-
-### 1.3 요금
-
-기준은 **세금 포함 총액, 즉 고객 결제 금액**이에요. B가 세금 금액을 따로 주지 않아 세금 별도 기준으로는 통일할 수 없어요.
-
-| 필드 | 타입 | 의미 | 계산 |
+| 표준 형태 | 필드 | 타입 | 뜻 |
 |---|---|---|---|
-| `totalPrice` · `SupplierRoomOffer` | long | 요청 기간 총액, 세금 포함. 통화 최소 단위 정수 | A = Σ(nightlyRate + taxAmount), B = totalPrice |
-| `nightlyTotal` · `SupplierDailyOffer`, 캐시 | long | 그날 1박 요금, 세금 포함 | A = nightlyRate + taxAmount, B = 1박 호출의 totalPrice. 검색은 숙박일의 합 |
-| `currency` | string | ISO 4217 | 그대로 |
-| `breakfastIncluded` | boolean | 요금에 조식이 포함되는지 | 그대로. 같은 객실도 공급사마다 달라 비교 조건 |
-
-버리는 것: A의 날짜별 단가·세금 내역은 총액으로 합쳐지고, B의 `taxIncluded`는 항상 true라 버려요.
-
-### 1.4 재고
-
-| 필드 | 타입 | 의미 | 계산 |
-|---|---|---|---|
-| `remainingRooms` · `SupplierDailyOffer`, 캐시 | int | 그날 예약 가능한 객실 수 | 그대로 |
-| `availableRooms` · `SupplierRoomOffer`, 응답 | int | 요청 기간 전체를 예약할 수 있는 객실 수 | 기간 내 날짜별 재고의 최솟값. 0이면 예약 불가 |
-
-별도 boolean은 두지 않아요. 0을 응답에서 뺄지는 [README 4.4](../README.md).
+| `SupplierHotel` · ① 숙소 목록 | `supplier` | `A` 또는 `B` | 출처 공급사 |
+| | `hotelCode` | string | 공급사 숙소 코드. 공급사 안에서만 유일 |
+| | `hotelName` | string | 숙소명 |
+| | `roomTypes` | list | 객실 타입 목록 |
+| `SupplierRoomType` | `roomTypeCode` | string | 공급사 객실 타입 코드. 숙소 안에서만 유일 |
+| | `roomTypeName` | string | 객실 타입명 |
+| | `maxOccupancy` | int, null 허용 | 최대 수용 인원, 성인과 아동 합산. 공급사가 주지 않으면 null로 미상 |
+| `SupplierRoomOffer` · ② 기간 조회, 검색 응답 | `totalPrice` | long | 요청 기간 총액, 세금 포함, 통화 최소 단위 정수 |
+| | `availableRooms` | int | 요청 기간 전체를 예약할 수 있는 객실 수. 날짜별 재고의 최솟값이고 0이면 예약 불가 |
+| | `currency` | string | ISO 4217 |
+| | `breakfastIncluded` | boolean | 요금에 조식이 포함되는지 |
+| | `maxOccupancy` | int, null 허용 | 재고·요금 응답이 준 최대 인원 |
+| `SupplierDailyOffer` · ② 날짜별 조회, 캐시 채우기 | `date` | date | 숙박일 |
+| | `remainingRooms` | int | 그날 예약 가능한 객실 수 |
+| | `nightlyTotal` | long | 그날 1박 요금, 세금 포함 |
+| `CachedRate` · Redis 필드 값 | 재고, 세금 포함 1박 요금, 통화, 조식, 최대 인원 | 세로 막대로 이은 문자열 | 캐시 필드 하나의 값. 형식은 architecture 4.8 |
 
 ## 2. 공급사 필드 대응
 
-구현 상태: ① 숙소 목록까지. ② 재고·요금은 검색 API와 함께 추가해요.
+① 숙소 목록의 필드 대응은 아래 표예요. ② 재고·요금의 필드 대응은 1장의 요금·재고 표에 있어요.
 
 ### 2.1 숙소 목록 (①) → `SupplierHotel` · `SupplierRoomType` → 매핑 테이블
 
-| 표준 형태 · 컬럼 | Supplier A `GET /a/v1/hotels` | Supplier B `GET /b/api/properties` | 변환 규칙 |
-|---|---|---|---|
-| `supplier` · `hotel_mapping.supplier` | 상수 `A` | 상수 `B` | 어댑터가 자기 값을 넣어요 |
-| `hotelCode` · `hotel_mapping.supplier_hotel_code` | `items[].hotelCode` | `data.items[].propertyId` | 필수. 없으면 그 항목 격리 |
-| `hotelName` · `hotel_mapping.hotel_name` | `items[].hotelName` | `data.items[].propertyName` | 필수. 하루 1회 덮어써요 |
-| `room_type_mapping.hotel_id` | 숙소 upsert가 돌려준 `id` | 같음 | 숙소를 먼저 저장해야 하므로 두 단계 |
-| `roomTypeCode` · `room_type_mapping.supplier_room_type_code` | `roomTypes[].roomTypeCode` | `rooms[].roomId` | 필수. 숙소 안에서만 유일 |
-| `roomTypeName` · `room_type_mapping.room_type_name` | `roomTypes[].roomTypeName` | `rooms[].roomName` | 필수 |
-| `maxOccupancy` · `room_type_mapping.max_occupancy` | `roomTypes[].maxOccupancy` | `rooms[].maxOccupancy` | 없거나 1 미만이면 기본값 대신 NULL로 미상 처리해 저장하고 로그. 검색 응답에서는 계약상 필수이므로 ② 응답 값 → 매핑 값 순으로 채우고, 둘 다 없으면 그 객실 타입을 응답에서 제외해요 |
-| `active` | 응답에 없음 | 응답에 없음 | 3.2 델타 계산 결과 |
-| 버리는 것 | 없음 | `resultCode`·`resultMessage`, 판정에만 써요 | 공급사 원본은 저장하지 않아요 |
+| 표준 필드 | 저장 컬럼 | Supplier A `GET /a/v1/hotels` | Supplier B `GET /b/api/properties` | 변환 규칙 |
+|---|---|---|---|---|
+| `supplier` | `hotel_mapping.supplier` | 상수 `A` | 상수 `B` | 어댑터가 자기 값을 넣어요 |
+| `hotelCode` | `hotel_mapping.supplier_hotel_code` | `items[].hotelCode` | `data.items[].propertyId` | 필수. 없으면 그 항목 격리 |
+| `hotelName` | `hotel_mapping.hotel_name` | `items[].hotelName` | `data.items[].propertyName` | 필수. 하루 1회 덮어써요 |
+| 없음 | `room_type_mapping.hotel_id` | 숙소 upsert가 돌려준 `id` | 같음 | 숙소를 먼저 저장해야 하므로 두 단계 |
+| `roomTypeCode` | `room_type_mapping.supplier_room_type_code` | `roomTypes[].roomTypeCode` | `rooms[].roomId` | 필수. 숙소 안에서만 유일 |
+| `roomTypeName` | `room_type_mapping.room_type_name` | `roomTypes[].roomTypeName` | `rooms[].roomName` | 필수 |
+| `maxOccupancy` | `room_type_mapping.max_occupancy` | `roomTypes[].maxOccupancy` | `rooms[].maxOccupancy` | 없거나 1 미만이면 기본값 대신 NULL로 미상 처리해 저장하고 로그. 검색 응답에서는 계약상 필수이므로 ② 응답 값 → 매핑 값 순으로 채우고, 둘 다 없으면 그 객실 타입을 응답에서 제외해요 |
+| 없음 | `room_type_mapping.active`, `hotel_mapping.active` | 응답에 없음 | 응답에 없음 | 3.2 델타 계산 결과 |
+| 버리는 것 | 없음 | 없음 | `resultCode`·`resultMessage`, 판정에만 써요 | 공급사 원본은 저장하지 않아요 |
 
 정상 0건은 A는 `items: []`, B는 `data.items: []`이고, 그 구조 자체가 없으면 깨진 응답 `INVALID_RESPONSE`로 봐요. 판정 규칙은 [architecture 4.2](architecture.md).
 
