@@ -222,6 +222,7 @@ Reactor `Flux.merge`는 하나라도 에러면 전체를 취소하므로, 실패
 #### 의사결정
 - 각 항목의 선택지와 이유는 위 "설계 의사결정 기록"에 있다. 오늘 확정한 것: 캐시 어사이드 검토 후 폐기(검토 20), 허용 속도 1→8→4회(검토 22), 예약 불가 기본 제외 + includeSoldOut, 최대 인원 미상 저장·응답 필수, 어댑터는 호출과 번역까지
 - 연동 지표는 코드로 넣지 않고 설계만: 안내 문서가 "설계만으로도 가능"으로 두었고 모니터는 외부 SaaS 설정이라 저장소에서 재현되지 않는다. 지표 정의·Datadog 전송 방식·알림 규칙을 architecture 4.7에 명세
+- 외부 호출 실패는 전부 알림(사용자 결정): 처음 알림 규칙은 비율 기준(성공률 97% 아래 등)뿐이라 한 건짜리 실패는 429 말고 안 울렸다. 부분 실패를 허용하는 설계일수록 실패가 응답에서 가려지므로, 공급사·DB·Redis 실패 1건 이상이면 알리고 같은 대상·원인은 5분 창에서 묶는 규칙으로 바꿨다. 지표가 없으니 근거는 로그(Datadog 로그 모니터)
 #### 막힌 지점과 해결 과정
 - Testcontainers 2.x는 모듈명이 `testcontainers-mysql`, `testcontainers-junit-jupiter`로 바뀌어 `org.testcontainers:mysql`이 안 잡힘. `./gradlew dependencyManagement`로 관리 버전을 확인해 해결. 제네릭 `MySQLContainer<?>`는 deprecated라 `org.testcontainers.mysql.MySQLContainer`로 교체
 - Spring Boot 4의 HTTP 클라이언트 설정 API가 `HttpClientSettings` + `ClientHttpConnectorBuilder.reactor()`로 바뀜. jar를 `javap`으로 열어 시그니처 확인
