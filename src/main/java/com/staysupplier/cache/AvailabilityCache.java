@@ -12,6 +12,8 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.springframework.data.redis.core.RedisCallback;
+import org.springframework.data.redis.core.RedisOperations;
+import org.springframework.data.redis.core.SessionCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import com.staysupplier.supplier.FailureReason;
@@ -44,14 +46,27 @@ public class AvailabilityCache {
 		return roomTypeId + ":" + DATE.format(date);
 	}
 
-	/** 숙소 하나의 날짜별 값을 통째로 쓰고 TTL 을 다시 건다 */
+	/**
+	 * 숙소 하나의 Hash 를 통째로 교체하고 TTL 을 다시 건다 (MULTI: DEL → HSET → EXPIRE).
+	 * 필드를 덧쓰기만 하면 TTL 이 매번 연장되어 지난 날짜·사라진 객실 타입 필드가 영원히 남으므로 교체한다.
+	 */
 	public void write(long hotelId, Map<String, CachedRate> fields, Instant refreshedAt) {
 		Map<String, String> encoded = new HashMap<>();
 		fields.forEach((field, rate) -> encoded.put(field, rate.encode()));
 		encoded.put(REFRESHED_AT, refreshedAt.toString());
 		String key = KEY_PREFIX + hotelId;
-		this.redis.opsForHash().putAll(key, encoded);
-		this.redis.expire(key, this.ttl);
+		Duration expiry = this.ttl;
+		this.redis.execute(new SessionCallback<List<Object>>() {
+			@Override
+			@SuppressWarnings({ "unchecked", "rawtypes" })
+			public List<Object> execute(RedisOperations operations) {
+				operations.multi();
+				operations.delete(key);
+				operations.opsForHash().putAll(key, encoded);
+				operations.expire(key, expiry);
+				return operations.exec();
+			}
+		});
 	}
 
 	/**

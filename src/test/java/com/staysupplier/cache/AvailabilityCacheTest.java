@@ -47,6 +47,18 @@ class AvailabilityCacheTest {
 	}
 
 	@Test
+	void rewriteReplacesTheWholeHashSoPastDatesDoNotAccumulate() {
+		LocalDate d1 = LocalDate.of(2026, 9, 1);
+		cache.write(5L, Map.of(AvailabilityCache.field(11L, d1), new CachedRate(3, 1000L, "KRW", false, 2)), Instant.now());
+		cache.write(5L, Map.of(AvailabilityCache.field(11L, d1.plusDays(1)), new CachedRate(2, 1100L, "KRW", false, 2)),
+				Instant.now());
+
+		assertThat(template.opsForHash().keys("stay:v1:5")).containsExactlyInAnyOrder(
+				AvailabilityCache.field(11L, d1.plusDays(1)), "_refreshedAt");
+		assertThat(template.getExpire("stay:v1:5")).isBetween(14 * 60L, 15 * 60L);
+	}
+
+	@Test
 	void encodesValueAsShortDelimitedStringWithOptionalOccupancy() {
 		CachedRate unknownOccupancy = new CachedRate(0, 88_000L, "KRW", true, null);
 		assertThat(unknownOccupancy.encode()).isEqualTo("0|88000|KRW|1|");
