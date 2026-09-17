@@ -4,17 +4,37 @@
 
 ## 1. 전체 구성
 
-```
-검색 클라이언트 ──HTTP──▶ 본 앱 (:8080, Spring MVC)
-                           │
-                           ├─ StaySearchService ──▶ Redis (:6379) 요금·재고 캐시 ─(값 없음·fresh=true)─▶ 공급사 어댑터 A·B
-                           ├─ MappingRegistry (인메모리 매핑) ◀── 기동 시·04:30 ── MySQL (:3306) hotel_mapping · room_type_mapping
-                           ├─ AvailabilityRefreshJob (기동 직후·5분마다) ──▶ 공급사 어댑터 A·B ──▶ Redis
-                           │
-                           └─ 공급사 어댑터 A·B ──WebClient (X-Api-Key, 1초/3초 타임아웃, 초당 4회)──▶ Mock Supplier (:9090)
+```mermaid
+flowchart LR
+    subgraph supplier["Mock Supplier (:9090) · 공급사 A·B"]
+        LIST["숙소 목록 API"]
+        AVAIL["재고·요금 API<br/>요청당 최대 50개"]
+    end
+    subgraph cron["sync 프로필 (K8s CronJob, 매일 04:00)"]
+        SYNC["MappingSyncJob<br/>델타 저장 후 종료 코드 0/1"]
+    end
+    subgraph app["본 앱 (:8080, Spring MVC)"]
+        REG["MappingRegistry<br/>인메모리 매핑"]
+        REFRESH["AvailabilityRefreshJob<br/>기동 직후 · 5분마다"]
+        SEARCH["StaySearchService"]
+    end
+    DB[("MySQL (:3306)<br/>hotel_mapping · room_type_mapping")]
+    REDIS[("Redis (:6379)<br/>숙소당 Hash · TTL 15분")]
+    CLIENT["검색 클라이언트"]
 
-같은 이미지, sync 프로필 (K8s CronJob, 매일 04:00) ─ MappingSyncJob ──▶ 공급사 어댑터 A·B (숙소 목록) ──▶ MySQL (델타 저장) ──▶ 종료
+    LIST -->|"어댑터 A·B"| SYNC --> DB
+    DB -->|"기동 시 · 04:30"| REG
+    REG --> REFRESH
+    REG --> SEARCH
+    REFRESH -->|"어댑터 A·B · 50개 묶음 · 초당 4회"| AVAIL
+    REFRESH -->|"정규화한 값"| REDIS
+    CLIENT -->|"GET /api/v1/stays/search"| SEARCH
+    SEARCH -->|"① 먼저 읽기"| REDIS
+    SEARCH -.->|"② 값 없는 숙소만 · fresh=true 면 전부"| AVAIL
+    SEARCH -->|"200 + failures / 400 / 503"| CLIENT
 ```
+
+공급사 호출은 전부 어댑터 A·B(WebClient, `X-Api-Key`, 연결 1초·응답 3초, 초당 4회)를 거쳐요. 크론잡은 같은 이미지를 `sync` 프로필로 띄운 별도 프로세스예요. 노드를 눌러 코드 출처와 상수를 볼 수 있는 [인터랙티브 로직 지도](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)도 있어요(원본은 `docs/system-story.html`).
 
 - 호출 방향은 항상 본 앱 → 바깥이에요. 공급사·MySQL·Redis는 본 앱을 호출하지 않아요.
 - 요금·재고는 Redis(TTL 있는 캐시)와 응답에만 있고 MySQL에는 매핑만 있어요.
