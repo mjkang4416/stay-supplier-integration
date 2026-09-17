@@ -23,7 +23,7 @@
 | `SupplierDailyOffer` · ② 날짜별 조회, 캐시 채우기 | `date` | date | 숙박일 |
 | | `remainingRooms` | int | 그날 예약 가능한 객실 수 |
 | | `nightlyTotal` | long | 그날 1박 요금, 세금 포함 |
-| `CachedRate` · Redis 필드 값 | 재고, 세금 포함 1박 요금, 통화, 조식, 최대 인원 | 세로 막대로 이은 문자열 | 캐시 필드 하나의 값. 형식은 architecture 4.6 |
+| `CachedRate` · Redis 필드 값 | 재고, 세금 포함 1박 요금, 통화, 조식, 최대 인원 | 세로 막대로 이은 문자열 | 캐시 필드 하나의 값. 형식은 architecture 4.5 |
 
 ## 2. 공급사 필드 대응
 
@@ -43,7 +43,7 @@
 | 없음 | `room_type_mapping.active`, `hotel_mapping.active` | 응답에 없음 | 응답에 없음 | 3.2 델타 계산 결과 |
 | 버리는 것 | 없음 | 없음 | `resultCode`·`resultMessage`, 판정에만 써요 | 공급사 원본은 저장하지 않아요 |
 
-정상 0건은 A는 `items: []`, B는 `data.items: []`이고, 그 구조 자체가 없으면 깨진 응답 `INVALID_RESPONSE`로 봐요. 판정 규칙은 [architecture 4.2](architecture.md).
+정상 0건은 A는 `items: []`, B는 `data.items: []`이고, 그 구조 자체가 없으면 깨진 응답 `INVALID_RESPONSE`로 봐요. 판정 규칙은 [architecture 4.1](architecture.md).
 
 ## 3. 매핑
 

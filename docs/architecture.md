@@ -38,7 +38,7 @@ flowchart LR
 
 - 호출 방향은 항상 본 앱 → 바깥이에요. 공급사·MySQL·Redis는 본 앱을 호출하지 않아요.
 - 요금·재고는 TTL이 있는 Redis 캐시와 응답에만 있고 MySQL에는 매핑만 있어요.
-- 검색이 공급사를 직접 부르는 것은 Redis에 값이 없는 숙소와 `fresh=true`뿐이에요. `fresh=true`는 검색 API의 요청 파라미터예요. 예약 직전처럼 최신 값이 꼭 필요할 때 호출하는 쪽이 `GET /api/v1/stays/search?checkIn=…&checkOut=…&adults=2&children=0&fresh=true`처럼 붙이면, 캐시를 건너뛰고 모든 숙소를 공급사에 직접 물어요. 응답의 `fresh` 필드는 그 결과가 직접 호출에서 왔는지를 알려줘요.
+- 검색이 공급사를 직접 부르는 것은 Redis에 값이 없는 숙소와 `fresh=true`뿐이에요. `fresh=true`는 검색 API의 요청 파라미터예요. 예약 직전처럼 최신 값이 꼭 필요할 때 호출하는 쪽이 `GET /api/v1/stays/search?checkIn=…&checkOut=…&adults=2&children=0&fresh=true`처럼 붙이면, 캐시를 건너뛰고 모든 숙소를 공급사에 직접 물어요. 응답의 `source` 필드가 `cache`인지 `supplier`인지로 결과가 어디서 왔는지 알려줘요.
 
 ## 2. 모듈·패키지 구조
 
@@ -105,8 +105,8 @@ flowchart LR
   - A6: 매핑이 비어 있을 때 → 빈 결과.
   - A7: 응답 정규화가 실패했을 때 → 항목 하나의 필드 누락은 그 항목만 빼고 로그, `maxOccupancy` 누락은 미상으로 살림. 본문 구조가 깨졌으면 그 공급사의 실패 `INVALID_RESPONSE`.
   - A8: 보유 숙소가 50개를 넘을 때 → 공급사 API는 한 요청에 숙소 50개까지만 받으므로 50개씩 나눠 병렬 호출.
-  - A9: Redis에 값이 없는 숙소가 있을 때, 즉 앱을 막 켜서 첫 갱신 전이거나 요청 날짜가 오늘부터 30일 범위 밖이거나 키가 만료됐을 때 → 그 숙소만 공급사에 직접 호출하고 응답에 `fresh: true`.
-  - A10: Redis 자체에 연결이 안 될 때 → 전부 공급사에 직접 호출하고 응답에 `fresh: true`.
+  - A9: Redis에 값이 없는 숙소가 있을 때, 즉 앱을 막 켜서 첫 갱신 전이거나 요청 날짜가 오늘부터 30일 범위 밖이거나 키가 만료됐을 때 → 그 숙소만 공급사에 직접 호출. 캐시에서 읽은 숙소가 하나도 없으면 응답의 `source`는 `supplier`.
+  - A10: Redis 자체에 연결이 안 될 때 → 전부 공급사에 직접 호출하고 응답의 `source`는 `supplier`.
   - A11: 갱신 잡의 마지막 시도가 실패한 공급사가 있을 때 → 캐시로 응답하되 `failures`에 그 공급사와 원인을 표시.
 
 ### 3.3 UC-3 요금·재고 캐시 갱신
@@ -116,7 +116,7 @@ flowchart LR
 - 기본 흐름
   1. 인메모리 매핑에서 공급사별 active 숙소 코드를 꺼내요.
   2. 어댑터의 날짜별 조회를 호출해요. A는 기간 한 번, B는 날짜마다 1박 호출이고 adults=1로 모든 객실 타입을 받아요. 50개 묶음·호출 한도 적용.
-  3. 공급사 코드를 내부 식별자로 바꿔 숙소당 Hash에 쓰고 주기의 3배인 TTL을 걸어요. 공급사별 상태 키에 성공 시각을 기록해요.
+  3. 공급사 코드를 내부 식별자로 바꿔 숙소당 Hash에 쓰고 15분 뒤 자동 삭제되도록 TTL을 걸어요. 갱신이 정상이면 5분마다 다시 써서 15분이 새로 시작되고, 갱신이 멈추면 15분 뒤 값이 사라져 검색이 직접 호출로 넘어가요. 공급사별 상태 키에 성공 시각을 기록해요.
 - 대안 흐름
   - A1: 공급사가 실패했을 때 → 그 공급사만 건너뛰고 상태 키에 원인·시각 기록. 값은 TTL까지 유지하고 검색이 `failures`에 표시.
   - A2: 묶음 일부가 실패했을 때 → 성공한 묶음만 쓰고 실패 묶음은 로그.
@@ -128,17 +128,7 @@ flowchart LR
 
 유스케이스 셋이 공통으로 쓰는 규칙이에요. 결정과 이유는 [README 4장](../README.md)에 있어요.
 
-### 4.1 어댑터 구조와 경계
-
-- 인터페이스 `supplier.SupplierClient`: `supplier()`, `fetchHotels()`, `fetchAvailability(query)`, `fetchDailyAvailability(codes, from, to)`. 반환은 `Mono`이고 호출하는 서비스가 여러 공급사를 합친 뒤 한 번 `block()`해요.
-- 구현체는 `supplier.a.SupplierAClient`·`supplier.b.SupplierBClient`이고, 전용 응답 형식은 package-private라 패키지 밖에서 못 써요.
-- 밖으로 나가는 형태는 `stay` 패키지의 표준 형태와 `FailureReason`뿐이에요. 저장·병합·캐시·재시도는 호출하는 서비스가 해요.
-- WebClient는 `SupplierWebClients`가 공급사마다 기동 시 만들고 기본 URL·`X-Api-Key`·연결 1초·응답 3초 타임아웃을 미리 적용해요. 설정 키는 `supplier.endpoints.{a|b}.connect-timeout`과 `response-timeout`이고, 설정이 빠지면 기동 실패예요.
-- 깨진 항목 처리: 코드·이름이 빠진 항목 → 그 항목만 버리고 warn 로그. `maxOccupancy`가 없거나 1 미만 → 객실 타입은 살리고 null로 미상. 검색 응답은 ② 응답 값 → 매핑 값 순으로 채우고 둘 다 없으면 그 객실 타입 제외.
-
-### 4.2 실패 판정
-
-A의 HTTP 상태, B의 `resultCode`, 전송 오류를 같은 `FailureReason`으로 바꿔 `SupplierCallException` 하나로 던져요. 판정 코드는 공통 규칙 `SupplierFailures`와 B의 `SupplierBClient.reasonOf`예요.
+### 4.1 실패 판정
 
 | `FailureReason` | Supplier A HTTP 상태 | Supplier B `resultCode` | 공통 전송 계층 |
 |---|---|---|---|
@@ -151,13 +141,11 @@ A의 HTTP 상태, B의 `resultCode`, 전송 오류를 같은 `FailureReason`으�
 | `CONNECTION` | | | 연결 거부·연결 타임아웃·DNS 실패 |
 | `INVALID_RESPONSE` | 본문 파싱 실패, `items` 구조 없음 | 모르는 `resultCode`, `0000`인데 `data.items` 구조 없음 | 코덱 오류 |
 
-`items: []`는 정상 0건이고, 성공 코드인데 `data`·`items` 구조가 없으면 `INVALID_RESPONSE`예요.
-
-### 4.3 신규 Supplier 추가 절차
+### 4.2 신규 Supplier 추가 절차
 
 고치는 곳과 고치지 않는 곳은 [README 4.3](../README.md)에, 단계별 절차는 `.claude/skills/add-supplier`에 있어요.
 
-### 4.4 재시도·서킷 브레이커
+### 4.3 재시도·서킷 브레이커
 
 구현 상태: 재시도는 구현이고 설정은 `mapping.sync.retry-*`, `search.retry-*`, `cache.rate-limit-*`예요. 서킷 브레이커는 설계만이에요.
 
@@ -170,7 +158,7 @@ A의 HTTP 상태, B의 `resultCode`, 전송 오류를 같은 `FailureReason`으�
 
 서킷 브레이커 설계: 최근 10회 중 5회 이상 실패 → 30초 동안 그 공급사를 부르지 않고 `failures`에 `CIRCUIT_OPEN`으로 표시. 30초 뒤 시험 호출 1회 성공 → 복구. 검색 직접 호출과 갱신 잡에만 걸고 크론잡에는 걸지 않아요.
 
-### 4.5 연동 지표·모니터링
+### 4.4 연동 지표·모니터링
 
 구현 상태: 설계만. 코드는 실패 로그만 남기고 지표는 붙이지 않았어요. 로그에는 공급사·원인·원본 코드·묶음 크기가 들어가요.
 
@@ -179,7 +167,7 @@ A의 HTTP 상태, B의 `resultCode`, 전송 오류를 같은 `FailureReason`으�
 - 알림: 공급사·DB·Redis 연결 실패는 원인 무관 1건 이상 → 알림, 같은 대상·원인은 5분 안에서 하나로 묶음. 429 비율 > 1% 또는 부분 실패 비율 > 5% → 긴급. 성공률 < 97% 또는 타임아웃 비율 > 2% → 긴급. p95 지연 > 타임아웃의 80% → 알림. 크론잡 마지막 성공이 25시간 초과 → 알림. 429는 정상 운영 신호라 예외 추적으로 보내지 않아요.
 - 호출 한도 조정: 공급사당 초당 4회에서 시작해요. 429를 받으면 코드가 그 공급사 한도를 절반으로 줄이고 하한은 0.5회예요. 올리는 건 429 알림이 며칠 없을 때 사람이 설정값으로 하고 상한은 10회예요.
 
-### 4.6 요금·재고 캐시
+### 4.5 요금·재고 캐시
 
 구현 상태: 갱신 잡 `AvailabilityRefreshJob`, 저장소 `AvailabilityCache`, 검색의 Redis 우선 읽기, 호출 한도 `SupplierRateLimiter`는 구현. 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트, readiness 연동, 갱신 잡 리더 선출은 설계만. 결정과 이유는 [README 4.6](../README.md)에 있어요.
 
@@ -242,4 +230,4 @@ spec:
               image: <app-image>
               args: ["--spring.profiles.active=sync"]
 ```
-`concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 해요. 앱 안의 고정 30초 × 3회 재시도는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡아요. 잡 실패 이벤트와 마지막 성공 시각이 25시간을 넘으면 메트릭 모니터로 알려요. 규칙은 4.5예요.
+`concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 해요. 앱 안의 고정 30초 × 3회 재시도는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡아요. 잡 실패 이벤트와 마지막 성공 시각이 25시간을 넘으면 메트릭 모니터로 알려요. 규칙은 4.4예요.

@@ -4,7 +4,7 @@
 
 ## 1. 통합 검색 API
 
-구현 상태: 구현. 평소 검색은 갱신 잡이 미리 채운 Redis를 읽어 `fresh: false`로 응답하고, 첫 갱신 전·범위 밖 날짜·Redis 장애로 값이 없는 숙소와 `fresh=true`일 때만 공급사를 직접 호출해요. 상세는 [architecture 4.6](architecture.md).
+구현 상태: 구현. 평소 검색은 갱신 잡이 미리 채운 Redis를 읽어 `source: cache`로 응답하고, 첫 갱신 전·범위 밖 날짜·Redis 장애로 값이 없는 숙소와 `fresh=true`일 때만 공급사를 직접 호출해요. 상세는 [architecture 4.5](architecture.md).
 
 ### 1.1 요청
 `GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&children=0`
@@ -38,7 +38,8 @@
 | `roomTypes[].price.currency` | string | ISO 4217 |
 | `roomTypes[].price.taxIncluded` | boolean | 항상 true. 요금 기준이 세금 포함이라서 |
 | `roomTypes[].price.breakfastIncluded` | boolean | 요금에 조식이 포함되는지. 같은 객실도 공급사마다 다를 수 있어 비교 조건 |
-| `failures[]` | array | 실패한 공급사. `supplier`, `reason`은 architecture 4.2의 `FailureReason`, `affectedHotels`는 값을 못 받은 숙소 수 |
+| `source` | string | `cache`면 캐시에서 한 숙소라도 읽은 응답, `supplier`면 전부 공급사에 직접 물어 만든 응답 |
+| `failures[]` | array | 실패한 공급사. `supplier`, `reason`은 architecture 4.1의 `FailureReason`, `affectedHotels`는 값을 못 받은 숙소 수 |
 | `fresh` | boolean | 공급사에 직접 물어 만든 응답이면 true, 캐시에서 한 숙소라도 읽었으면 false |
 
 ### 1.3 부분 실패 표현
@@ -65,7 +66,7 @@
       "roomTypes": [ { "roomTypeId": 3, "roomTypeName": "Deluxe Twin Room", "maxOccupancy": 2, "availableRooms": 1,
                        "price": { "total": 452000, "currency": "KRW", "taxIncluded": true, "breakfastIncluded": true } } ] }
   ],
-  "failures": [], "fresh": true
+  "failures": [], "source": "supplier"
 }
 ```
 
@@ -75,7 +76,7 @@
   "checkIn": "2026-09-01", "checkOut": "2026-09-04", "nights": 3, "adults": 2, "children": 0,
   "stays": [ { "hotelId": 3, "hotelName": "Riverside Hotel Seoul", "supplier": "B", "roomTypes": [ "..." ] } ],
   "failures": [ { "supplier": "A", "reason": "TIMEOUT", "affectedHotels": 2 } ],
-  "fresh": true
+  "source": "supplier"
 }
 ```
 

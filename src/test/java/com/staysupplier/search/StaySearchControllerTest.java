@@ -38,7 +38,7 @@ class StaySearchControllerTest {
 				LocalDate.of(2026, 9, 4), 3, 2, 0,
 				List.of(new Stay(1L, "Riverside Hotel Seoul", Supplier.A, List.of(
 						new RoomType(11L, "Deluxe Twin", 2, 1, new Price(429_000L, "KRW", true, false))))),
-				List.of(new SupplierFailure(Supplier.B, FailureReason.TIMEOUT, 1)), true));
+				List.of(new SupplierFailure(Supplier.B, FailureReason.TIMEOUT, 1)), StaySearchResponse.Source.SUPPLIER));
 
 		this.mockMvc
 			.perform(get("/api/v1/stays/search").param("checkIn", "2026-09-01")
@@ -54,6 +54,7 @@ class StaySearchControllerTest {
 			.andExpect(jsonPath("$.stays[0].roomTypes[0].price.total").value(429000))
 			.andExpect(jsonPath("$.stays[0].roomTypes[0].price.taxIncluded").value(true))
 			.andExpect(jsonPath("$.failures[0].supplier").value("B"))
+			.andExpect(jsonPath("$.source").value("supplier"))
 			.andExpect(jsonPath("$.failures[0].reason").value("TIMEOUT"));
 	}
 

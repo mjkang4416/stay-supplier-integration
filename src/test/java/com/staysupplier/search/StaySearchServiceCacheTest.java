@@ -94,7 +94,7 @@ class StaySearchServiceCacheTest {
 
 		assertThat(a.calls()).isZero();
 		assertThat(b.calls()).isZero();
-		assertThat(response.fresh()).isFalse();
+		assertThat(response.source()).isEqualTo(StaySearchResponse.Source.CACHE);
 		assertThat(response.failures()).isEmpty();
 		assertThat(response.stays()).extracting(Stay::hotelId).containsExactly(1L, 3L);
 		assertThat(response.stays().get(0).roomTypes()).singleElement().satisfies(roomType -> {
@@ -116,7 +116,7 @@ class StaySearchServiceCacheTest {
 		assertThat(a.calls()).isZero();
 		assertThat(b.calls()).isEqualTo(1);
 		assertThat(b.lastQuery().hotelCodes()).containsExactly("B77120");
-		assertThat(response.fresh()).isFalse();
+		assertThat(response.source()).isEqualTo(StaySearchResponse.Source.CACHE);
 		assertThat(response.stays()).extracting(Stay::hotelId).containsExactly(1L, 3L);
 	}
 
@@ -145,7 +145,7 @@ class StaySearchServiceCacheTest {
 		StaySearchResponse response = service(cache, a, b).search(request(true));
 
 		assertThat(a.calls()).isEqualTo(1);
-		assertThat(response.fresh()).isTrue();
+		assertThat(response.source()).isEqualTo(StaySearchResponse.Source.SUPPLIER);
 		assertThat(response.stays().get(0).roomTypes().get(0).price().total()).isEqualTo(429_000L);
 	}
 
@@ -172,7 +172,7 @@ class StaySearchServiceCacheTest {
 		StaySearchResponse response = service(unreachable, a, b).search(request(false));
 
 		assertThat(a.calls()).isEqualTo(1);
-		assertThat(response.fresh()).isTrue();
+		assertThat(response.source()).isEqualTo(StaySearchResponse.Source.SUPPLIER);
 		assertThat(response.stays()).extracting(Stay::hotelId).containsExactly(1L);
 	}
 

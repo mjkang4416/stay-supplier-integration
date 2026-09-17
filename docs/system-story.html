@@ -264,7 +264,7 @@
 
       <g class="node" data-k="r_in"><rect class="box acc-g" x="40" y="210" width="190" height="60" rx="10"/><text class="t sm" x="135" y="234" text-anchor="middle">GET /api/v1/stays/search</text><text class="s" x="135" y="251" text-anchor="middle">StaySearchController</text></g>
       <g class="node" data-k="r_val"><rect class="box" x="260" y="210" width="190" height="60" rx="10"/><text class="t sm" x="355" y="234" text-anchor="middle">요청 검증 (실패 → 400)</text><text class="s" x="355" y="251" text-anchor="middle">StaySearchRequest.validate</text></g>
-      <g class="node" data-k="r_cache"><rect class="box" x="480" y="210" width="200" height="60" rx="10"/><text class="t sm" x="580" y="234" text-anchor="middle">Redis 우선 읽기</text><text class="s" x="580" y="251" text-anchor="middle">readCache · fresh=false</text></g>
+      <g class="node" data-k="r_cache"><rect class="box" x="480" y="210" width="200" height="60" rx="10"/><text class="t sm" x="580" y="234" text-anchor="middle">Redis 우선 읽기</text><text class="s" x="580" y="251" text-anchor="middle">readCache · source=cache</text></g>
       <g class="node" data-k="r_gate"><rect class="box" x="710" y="210" width="170" height="60" rx="10"/><text class="t sm" x="795" y="234" text-anchor="middle">값 없는 숙소 있나?</text><text class="s" x="795" y="251" text-anchor="middle">fresh=true 면 전부 직접</text></g>
       <g class="node" data-k="r_fan"><rect class="box" x="910" y="210" width="170" height="60" rx="10"/><text class="t sm" x="995" y="234" text-anchor="middle">공급사 fan-out</text><text class="s" x="995" y="251" text-anchor="middle">Flux.flatMap · 1회 재시도</text></g>
       <g class="node" data-k="r_out"><rect class="box" x="40" y="320" width="190" height="60" rx="10"/><text class="t sm" x="135" y="344" text-anchor="middle">응답 200 / 400 / 503</text><text class="s" x="135" y="361" text-anchor="middle">SearchExceptionHandler</text></g>
@@ -288,7 +288,7 @@
       <g class="node" data-k="x_redis"><rect class="box acc-b" x="1120" y="320" width="260" height="80" rx="10"/><text class="t sm" x="1250" y="342" text-anchor="middle">Redis · 요금·재고 캐시</text><text class="s" x="1250" y="357" text-anchor="middle">stay:v1:{hotelId} Hash · TTL 15m</text><rect class="mchip" x="1132" y="366" width="140" height="16" rx="4"/><text class="mtx" x="1138" y="377.5">stay:v1:status:{supplier}</text></g>
       <g class="node" data-k="x_mysql"><rect class="box acc-b" x="1120" y="462" width="260" height="64" rx="10"/><text class="t sm" x="1250" y="488" text-anchor="middle">MySQL · 매핑만 저장</text><text class="s" x="1250" y="505" text-anchor="middle">hotel_mapping · room_type_mapping</text></g>
 
-      <g class="node" data-k="o_log"><rect class="box cfg" x="1120" y="660" width="260" height="64" rx="10"/><text class="t sm" x="1250" y="686" text-anchor="middle">warn/error 로그 + 상태 키</text><text class="s" x="1250" y="703" text-anchor="middle">지표·모니터는 설계만 (architecture 4.5)</text></g>
+      <g class="node" data-k="o_log"><rect class="box cfg" x="1120" y="660" width="260" height="64" rx="10"/><text class="t sm" x="1250" y="686" text-anchor="middle">warn/error 로그 + 상태 키</text><text class="s" x="1250" y="703" text-anchor="middle">지표·모니터는 설계만 (architecture 4.4)</text></g>
     </svg>
   </div>
 
@@ -397,7 +397,7 @@
       src:'src/main/java/com/staysupplier/mapping/MappingRegistryLoader.java:18-41 · MappingRegistry.java:41-60'},
     b_first:{k:'boot',t:'갱신 잡 첫 바퀴',en:'CacheConfig.RefreshScheduler · initialDelay PT0S',
       sum:'기동 직후 오늘~+30일 요금·재고를 Redis 에 채우기 시작해요. 첫 바퀴가 끝나기 전 검색은 저하 모드예요.',
-      pts:['<code>@Scheduled(fixedDelayString="${cache.refresh-interval}", initialDelayString="PT0S")</code>','<code>cache.refresh-enabled=false</code> 면 빈 자체가 안 만들어져요 (테스트)','한 바퀴 예외는 error 로그로 삼키고 다음 주기에 다시 해요','readiness 와 연동해 첫 바퀴 전 트래픽을 막는 것은 설계만이에요 (architecture 4.6)'],
+      pts:['<code>@Scheduled(fixedDelayString="${cache.refresh-interval}", initialDelayString="PT0S")</code>','<code>cache.refresh-enabled=false</code> 면 빈 자체가 안 만들어져요 (테스트)','한 바퀴 예외는 error 로그로 삼키고 다음 주기에 다시 해요','readiness 와 연동해 첫 바퀴 전 트래픽을 막는 것은 설계만이에요 (architecture 4.5)'],
       src:'src/main/java/com/staysupplier/config/CacheConfig.java:41-68'},
     r_in:{k:'req',t:'GET /api/v1/stays/search',en:'StaySearchController',
       sum:'검색 조건은 날짜와 인원뿐이에요. 대상은 보유 숙소 전체예요.',
@@ -489,12 +489,12 @@
       src:'src/main/resources/mapper/HotelMappingMapper.xml · RoomTypeMappingMapper.xml · schema.sql'},
     o_log:{k:'obs',t:'warn/error 로그 + 상태 키',en:'지표·모니터는 설계만',
       sum:'코드에 지표는 없어요. 외부 호출·DB·Redis 실패는 공급사·원인·원본 코드를 로그로 남기고, 갱신 잡은 상태 키에도 적어요.',
-      pts:['검색: <code>search supplier=A failed reason=… hotels=n</code> (warn), 전부 실패 (error)','크론잡: <code>mapping sync skipped supplier=… reason=…</code>, 보류 (error)','갱신 잡: <code>cache refresh supplier=… failed reason=… (values kept until TTL)</code> (error)','Datadog 로그 모니터·알림 규칙·지표 정의는 <code>docs/architecture.md</code> 4.5 에 설계로만 있어요'],
+      pts:['검색: <code>search supplier=A failed reason=… hotels=n</code> (warn), 전부 실패 (error)','크론잡: <code>mapping sync skipped supplier=… reason=…</code>, 보류 (error)','갱신 잡: <code>cache refresh supplier=… failed reason=… (values kept until TTL)</code> (error)','Datadog 로그 모니터·알림 규칙·지표 정의는 <code>docs/architecture.md</code> 4.4 에 설계로만 있어요'],
       src:'src/main/java/com/staysupplier/cache/AvailabilityRefreshJob.java:70-87 · search/StaySearchService.java:208 · mapping/MappingSyncJob.java:77-79'},
     e_boot1:{k:'edge',t:'설정 → 매핑 로드',en:'빈 생성 순서',sum:'설정 바인딩과 WebClient 생성이 끝난 뒤 모든 싱글턴이 만들어지고 나서 매핑을 읽어요.',src:'config/SupplierClientConfig.java · mapping/MappingRegistryLoader.java:38-41'},
     e_boot2:{k:'edge',t:'매핑 로드 → 갱신 잡 첫 바퀴',en:'스케줄러 initialDelay 0',sum:'인메모리 매핑이 있어야 갱신 잡이 공급사별 숙소 코드를 꺼낼 수 있어요.',src:'config/CacheConfig.java:58-66'},
     e_in:{k:'edge',t:'컨트롤러 → 검증',en:'StaySearchRequest',sum:'컨트롤러는 요청 객체만 만들고 검증은 서비스 첫 줄에서 해요.',src:'search/StaySearchService.java:69'},
-    e_val:{k:'edge',t:'검증 통과 → Redis 읽기',en:'fresh=false 일 때',sum:'검증을 통과한 요청만 Redis 를 읽어요.',src:'search/StaySearchService.java:80-82'},
+    e_val:{k:'edge',t:'검증 통과 → Redis 읽기',en:'요청에 fresh 가 없을 때',sum:'검증을 통과한 요청만 Redis 를 읽어요.',src:'search/StaySearchService.java:80-82'},
     e_cache_gate:{k:'edge',t:'캐시 결과 → 게이트',en:'missing 갱신',sum:'값이 있는 숙소는 missing 에서 빠져요.',src:'search/StaySearchService.java:186-187'},
     e_gate_fan:{k:'edge',t:'값 없는 숙소 → fan-out',en:'missing 비어 있지 않을 때',sum:'missing 이 비어 있으면 이 선은 켜지지 않아요.',src:'search/StaySearchService.java:85'},
     e_gate_merge:{k:'edge',t:'캐시 값 → 병합',en:'점선 = 공급사 호출 없음',sum:'Redis 적중 숙소는 toRoomType 을 거쳐 바로 병합 대상이 돼요.',src:'search/StaySearchService.java:180-185'},
@@ -538,7 +538,7 @@
     s_cache:{title:'③ 캐시 상태', kind:'상태',
       sum:'검색은 Redis 를 먼저 읽고, 값이 없는 숙소만 공급사를 불러요. 캐시를 채우는 것은 갱신 잡뿐이에요.',
       ids:['r_cache','e_cache_redis','x_redis','r_gate','e_gate_merge','e_gate_fan','r_fan','f_degrade','j_refresh','e_refresh_store','j_store','e_store_redis','b_first'],
-      steps:['<b>적중</b> — 숙소 × 객실 타입 × 숙박일 필드가 전부 있으면 공급사 호출 0회, 수 ms. 응답 <code>fresh: false</code>.','<b>저하 모드</b> — 키 없음(첫 바퀴 전 · FLUSHALL · 창 밖 날짜) 또는 Redis 예외 → 그 숙소만(예외면 전부) 직접 호출. <code>fresh: true</code>.','<b>fresh=true</b> — 예약 직전 재확인용. Redis 를 읽지 않고 전부 직접 호출해요.','<b>채우기</b> — 갱신 잡이 5분마다 오늘~+30일을 Hash 통째 교체(TTL 900s). 실패 공급사는 상태 키에 기록되고 검색 응답의 <code>failures</code> 에 붙어요. 값은 TTL 까지 유지돼요.']}
+      steps:['<b>적중</b> — 숙소 × 객실 타입 × 숙박일 필드가 전부 있으면 공급사 호출 0회, 수 ms. 응답 <code>source: cache</code>.','<b>저하 모드</b> — 키 없음(첫 바퀴 전 · FLUSHALL · 창 밖 날짜) 또는 Redis 예외 → 그 숙소만(예외면 전부) 직접 호출. <code>fresh: true</code>.','<b>fresh=true</b> — 예약 직전 재확인용. Redis 를 읽지 않고 전부 직접 호출해요.','<b>채우기</b> — 갱신 잡이 5분마다 오늘~+30일을 Hash 통째 교체(TTL 900s). 실패 공급사는 상태 키에 기록되고 검색 응답의 <code>failures</code> 에 붙어요. 값은 TTL 까지 유지돼요.']}
   };
   /* 스토리(단계 재생): 각 step = {ids(지도 조명), sq(시퀀스 뷰 표현), t, sum, pts, n?, lk?, done?}
      sq: {k:'msg',f:'레인',t:'레인',l:'라벨'} | {k:'self',ln:'레인',l:'라벨'} | {k:'burst',...} */

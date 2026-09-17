@@ -12,7 +12,7 @@ allowed-tools: Bash(docker compose exec*)
 
 ## 전제
 - Redis 가 Docker 컨테이너 `stay-supplier-redis` 에서 떠 있고, 애플리케이션이 기동해 갱신 잡 첫 갱신(약 10초)가 끝났어요.
-- 키·값 형식은 `docs/architecture.md` 4.6. 숙소당 Hash 하나: 키 `stay:v1:{hotelId}`, 필드 `{roomTypeId}:{yyyyMMdd}`, 값 `재고|세금 포함 1박|통화|조식(0/1)|최대 인원`. `hotelId`·`roomTypeId` 는 `query-mapping` 의 `id` 다.
+- 키·값 형식은 `docs/architecture.md` 4.5. 숙소당 Hash 하나: 키 `stay:v1:{hotelId}`, 필드 `{roomTypeId}:{yyyyMMdd}`, 값 `재고|세금 포함 1박|통화|조식(0/1)|최대 인원`. `hotelId`·`roomTypeId` 는 `query-mapping` 의 `id` 다.
 
 ## 실행 순서
 1. 키 목록 (숙소별 Hash + 공급사별 상태 키)
@@ -39,7 +39,7 @@ allowed-tools: Bash(docker compose exec*)
 - 값 예: `3|132000|KRW|0|2` 는 재고 3, 세금 포함 1박 132,000원, KRW, 조식 없음, 최대 2인이에요. 마지막 칸이 비어 있으면 최대 인원 미상이에요. 재고 0 도 저장돼요(연박 판정에 필요).
 - `_refreshedAt` 은 그 숙소를 마지막으로 채운 시각(UTC)이에요. TTL 은 갱신 주기 × 3 = 900초에서 시작해 줄어들다가 다음 갱신에서 다시 900 이 돼요. 0 에 가까워지면 갱신 잡이 멈춘 것이에요.
 - 상태 키는 `lastSuccessAt`, 또는 `lastFailureAt` + `lastFailureReason`(`FailureReason` 이름)을 가져요. 실패가 기록되면 검색 응답의 `failures` 에도 그 공급사가 붙어요.
-- 키가 없으면 검색은 공급사를 직접 부르고 `"fresh": true` 로 응답해요(저하 모드). 첫 갱신 전, 범위(오늘\~+30일) 밖 날짜, FLUSHALL 직후가 여기에 해당해요.
+- 키가 없으면 검색은 공급사를 직접 부르고 `"source": "supplier"` 로 응답해요(저하 모드). 첫 갱신 전, 범위(오늘\~+30일) 밖 날짜, FLUSHALL 직후가 여기에 해당해요.
 
 ## 주의사항
 - `KEYS` 는 로컬 확인용이에요. 운영 Redis 에서는 `SCAN` 을 써요.

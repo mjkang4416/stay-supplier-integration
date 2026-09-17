@@ -18,10 +18,10 @@ allowed-tools: Bash(curl*), Bash(docker compose*), Bash(python3 -m json.tool*)
 ```bash
 Q='http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026-09-23&adults=2&children=0'
 
-# 1. 캐시 적중: "fresh": false, 수 ms. Riverside A(429,000)·Riverside B(452,000, 조식 포함). Namsan 은 하루 재고 0 이라 제외
+# 1. 캐시 적중: "source": "cache", 수 ms. Riverside A(429,000)·Riverside B(452,000, 조식 포함). Namsan 은 하루 재고 0 이라 제외
 curl -s "$Q" | python3 -m json.tool
 
-# 2. 캐시 비우기 → 저하 모드: "fresh": true, 공급사 직접 호출, 같은 값
+# 2. 캐시 비우기 → 저하 모드: "source": "supplier", 공급사 직접 호출, 같은 값
 docker compose exec redis redis-cli FLUSHALL
 curl -s "$Q" | python3 -m json.tool
 

@@ -10,7 +10,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash(./gradlew*)
 
 # 신규 공급사 추가
 
-절차의 근거는 README 4.3의 수정 범위와 `docs/architecture.md` 4.1\~4.2의 어댑터 경계·실패 판정이에요. 이 스킬은 순서와 확인 방법만 담아요.
+절차의 근거는 README 4.3의 수정 범위와 `docs/architecture.md` 4.1의 실패 판정 표이에요. 이 스킬은 순서와 확인 방법만 담아요.
 
 ## 전제
 - 새 공급사의 API 스펙(엔드포인트, 인증 헤더, 응답 형식, 실패를 알리는 방식)을 알고 있어요.
@@ -39,7 +39,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash(./gradlew*)
    - `src/test/java/com/staysupplier/supplier/c/SupplierCClientTest.java` 를 WireMock 으로 작성해요. `SupplierAClientTest`(상태 코드 판정)·`SupplierBClientTest`(본문 코드 판정)가 본보기.
    - 최소 검증: 목록·재고 정규화 값, `X-Api-Key` 전송, 실패 판정(→ `FailureReason`), 타임아웃 → `TIMEOUT`, 0건 vs 구조 누락(`INVALID_RESPONSE`), 50개 분할.
 5. Mock Supplier 에 C 엔드포인트를 추가할지 정해요. 로컬 확인에만 필요하며 `mock-supplier` 모듈은 본 앱과 코드를 공유하지 않아요.
-6. 문서: `docs/stay-model.md` 2장 필드 대응표에 열 추가, `docs/architecture.md` 4.2 실패 판정에 규칙 추가, README 4.1 살린·버린 정보 표에 열 추가.
+6. 문서: `docs/stay-model.md` 2장 필드 대응표에 열 추가, `docs/architecture.md` 4.1 실패 판정에 규칙 추가, README 4.1 살린·버린 정보 표에 열 추가.
 7. `./gradlew build` 로 전체 테스트를 돌려요.
 
 ## 확인 포인트
@@ -49,4 +49,4 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash(./gradlew*)
 ## 주의사항
 - 공급사 원본 오류 메시지는 예외의 원본 코드와 로그에만 두고 응답에 내보내지 않아요.
 - 기본값을 넣어 추측하지 않아요. 최대 인원이 없으면 null, 코드·이름이 없으면 그 항목을 버려요.
-- 실패 사유는 `FailureReason` 8가지 밖으로 늘리지 않아요. 새 종류가 필요하면 먼저 `docs/architecture.md` 4.2 를 고쳐요.
+- 실패 사유는 `FailureReason` 8가지 밖으로 늘리지 않아요. 새 종류가 필요하면 먼저 `docs/architecture.md` 4.1 을 고쳐요.
