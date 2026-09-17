@@ -278,23 +278,23 @@ Reactor `Flux.merge`는 하나라도 에러면 전체를 취소하므로, 실패
 
 ### 결과
 
-`./gradlew test` 71개 통과 (2026-09-17 기준. Docker가 떠 있어야 Testcontainers 통합 테스트가 돈다).
+`./gradlew test` 76개 통과 (2026-09-17 기준. Docker가 떠 있어야 Testcontainers 통합 테스트가 돈다).
 
 | 층 | 테스트 | 개수 | 검증한 것 |
 |---|---|---|---|
 | 통합 (MySQL 컨테이너) | MappingMapperIntegrationTest | 4 | 같은 코드 재저장 시 id 유지, 공급사가 다르면 다른 id, 비활성 후 복귀 시 id 유지, 객실 타입 코드는 숙소 안에서만 유일 |
 | 통합 (MySQL 컨테이너) | MappingSyncJobIntegrationTest | 6 | 첫 실행 삽입, 델타(변경·추가·사라짐)와 식별자 유지, 실패 공급사 건너뛰기, 재시도·비재시도, 절반 초과 사라짐 보류 |
 | 단위 | MappingRegistryTest, MappingRegistryLoaderTest, MappingSyncRunnerTest | 7 | 스냅샷 조회, 기동 로드 실패 시 기동 실패, 리로드 실패 시 유지 + 5분 재시도, 종료 코드 |
-| 단위 | SupplierPropertiesTest, SupplierWebClientsTest | 4 | 설정 바인딩, 누락 설정 시 기동 실패 |
+| 단위 | SupplierPropertiesTest, SupplierWebClientsTest, SupplierRateLimiterTest | 7 | 설정 바인딩, 누락 설정 시 기동 실패, 호출 예산(허용 속도로 호출 간격 유지, 공급사별 독립, 429면 절반·다른 실패는 유지) |
 | 어댑터 HTTP (WireMock) | SupplierAClientTest | 14 | 목록·재고 정규화(429,000 / 302,500), 날짜별 조회(기간 한 번 호출), X-Api-Key, 상태 코드 판정, Retry-After, 타임아웃, 연결 실패, 50개 분할, 묶음 부분·전부 실패, 날짜 수 불일치, 0건 vs 구조 누락 |
 | 어댑터 HTTP (WireMock) | SupplierBClientTest | 11 | HTTP 200 + resultCode 실패 판정, 모르는 코드, data 누락, 0건, 최대 인원 미상, 재고·요금 정규화(452,000), 날짜별 조회(1박씩 호출) |
 | 단위 | StaySearchServiceTest | 10 | 병합·내부 id 변환, 예약 불가 제외·포함, 인원 필터, 최대 인원 출처, 부분 실패·묶음 실패 표시, 전부 실패 예외, 즉시 1회 재시도(타임아웃 제외), 미매핑 코드, 요청 검증 |
 | 단위 (Redis 컨테이너) | StaySearchServiceCacheTest | 5 | 전부 캐시면 공급사 호출 0, 없는 숙소만 직접 호출, fresh=true, 상태 키 실패 표시, Redis 장애 시 저하 모드 |
-| 캐시 (Redis 컨테이너) | AvailabilityCacheTest, AvailabilityRefreshJobTest | 5 | Hash 쓰기·TTL·파이프라인 읽기, 값 형식, 상태 키, 갱신 잡의 창 채우기·미매핑 제외·실패 공급사 격리 |
+| 캐시 (Redis 컨테이너) | AvailabilityCacheTest, AvailabilityRefreshJobTest | 7 | Hash 쓰기·TTL·파이프라인 읽기, Hash 통째 교체(지난 날짜 필드가 쌓이지 않음), 값 형식, 상태 키, 갱신 잡의 창 채우기·미매핑 제외·실패 공급사 격리, 429 지수 백오프(다른 실패는 재시도 안 함) |
 | 웹 슬라이스 | StaySearchControllerTest | 4 | 200 JSON 형태, 400(검증·누락·형식), 503 + Retry-After |
 | 컨텍스트 | StaySupplierIntegrationApplicationTests | 1 | 로컬 MySQL로 기동 |
 
-Mock Supplier로 직접 확인한 시나리오(README 3장 동작 확인과 같음): 캐시 적중 200(7ms, fresh=false) → FLUSHALL 뒤 저하 모드 직접 호출(같은 값) → A 장애 200 + failures UNAVAILABLE(0.2초, 재시도 포함) → A 무응답 200 + failures TIMEOUT(3.0초) → 전부 장애 503 + Retry-After → includeSoldOut으로 예약 불가 포함 → fresh=true 직접 호출 → 체크아웃 < 체크인 400. sync 프로필 실행으로 매핑 3건 저장과 종료 코드 0, 갱신 잡 첫 바퀴로 숙소 3개 × 30일 채움과 TTL 15분 확인.
+Mock Supplier로 직접 확인한 시나리오(README 5장 동작 확인과 같음): 캐시 적중 200(7ms, fresh=false) → FLUSHALL 뒤 저하 모드 직접 호출(같은 값) → A 장애 200 + failures UNAVAILABLE(0.2초, 재시도 포함) → A 무응답 200 + failures TIMEOUT(3.0초) → 전부 장애 503 + Retry-After → includeSoldOut으로 예약 불가 포함 → fresh=true 직접 호출 → 체크아웃 < 체크인 400. sync 프로필 실행으로 매핑 3건 저장과 종료 코드 0, 갱신 잡 첫 바퀴로 숙소 3개 × 30일 채움과 TTL 15분 확인.
 
 ## AI 활용 기록
 
@@ -391,7 +391,7 @@ Mock Supplier로 직접 확인한 시나리오(README 3장 동작 확인과 같�
 - 답변 요지: 소비자 화면은 매진을 희소성 문구와 함께 남기고(소비자 단체가 과장이라고 지적), 공급사·집계 API는 예약 가능한 것만 돌려줌. 국내 앱은 공개 자료 없음
 - 판단: 수용. 집계 API 관행(기본 제외)을 따르고 매진 노출은 옵션으로
 - 이유: 이 API는 앱 백엔드가 쓰는 집계 API이고 프론트엔드는 비범위
-- 관련: README 5.4, docs/domain-research.md
+- 관련: README 4.4, docs/domain-research.md
 
 - 물어본 것: 공급사가 최대 인원을 안 줄 때, B가 성공 코드인데 데이터가 없을 때의 처리
 - 답변 요지: 처음 초안은 "그 객실 타입을 저장하지 않음", "0000 + 데이터 없음은 실패"
@@ -411,7 +411,7 @@ Mock Supplier로 직접 확인한 시나리오(README 3장 동작 확인과 같�
 - 답변 요지: `HttpClientSettings` + `ClientHttpConnectorBuilder.reactor()`로 공급사별 커넥터를 만들고 `X-Api-Key`는 기본 헤더로. 대안(WebClient 하나 공유, 어댑터별 생성, HTTP 서비스 클라이언트, WebFlux 전면, 가상 스레드)을 비교
 - 판단: 수용
 - 이유: 연결 타임아웃은 커넥터 수준이라 공급사별로 다르게 주려면 어차피 커넥터가 갈림. 가상 스레드는 블로킹 클라이언트용이라 WebClient 지정 요구와 맞지 않음
-- 관련: src/main/java/com/staysupplier/supplier/SupplierWebClients.java, README 5.6
+- 관련: src/main/java/com/staysupplier/supplier/SupplierWebClients.java, README 4.7
 
 - 물어본 것: Redis 캐시 최소 구현(갱신 잡, Hash 쓰기·읽기, 검색의 캐시 우선, 호출 예산)과 테스트
 - 답변 요지: `cache/` 패키지에 저장소·갱신 잡, 어댑터에 날짜별 조회, 검색은 값이 없는 숙소만 직접 호출. Mock이 고정 날짜라 창과 안 맞는 문제를 발견해 Mock을 날짜 범위대로 생성하도록 바꿈. 테스트 컨테이너를 클래스마다 띄우다 연결 거부가 나서 싱글턴으로 정리

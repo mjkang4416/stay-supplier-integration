@@ -61,7 +61,7 @@
 ### 3.2 UC-1 매핑 생성·갱신
 
 - 목적: 공급사의 숙소·객실 타입 코드를 내부 식별자에 대응시켜 저장한다.
-- 트리거: 매일 04:00 Asia/Seoul에 K8s CronJob이 `sync` 프로필로 1회 실행(로컬은 `./gradlew :bootRun --args='--spring.profiles.active=sync'`). 웹 앱은 매핑을 만들지 않고 기동 시와 04:30에 DB에서 읽는다. 결정 근거는 README 5.2
+- 트리거: 매일 04:00 Asia/Seoul에 K8s CronJob이 `sync` 프로필로 1회 실행(로컬은 `./gradlew :bootRun --args='--spring.profiles.active=sync'`). 웹 앱은 매핑을 만들지 않고 기동 시와 04:30에 DB에서 읽는다. 결정 근거는 README 4.2
 - 기본 흐름
   1. 공급사별 숙소 목록 API를 호출한다.
   2. 숙소마다 (공급사, 숙소 코드)에 대한 내부 숙소 식별자를 확보한다. 이미 있으면 재사용한다.
@@ -152,7 +152,7 @@ A는 HTTP 상태 코드로, B는 항상 HTTP 200에 본문 `resultCode`로 실�
 
 ### 4.3 타임아웃
 
-설정 위치는 `supplier.endpoints.{a|b}.connect-timeout`(기본 1초)과 `response-timeout`(기본 3초)이고, `SupplierWebClients`가 공급사별 WebClient를 만들 때 적용한다(Spring Boot `HttpClientSettings` → reactor-netty 연결 타임아웃·응답 타임아웃). 값의 근거는 [README 5.5](../README.md)에 있다. 초과하면 `FailureReason.TIMEOUT`(응답) 또는 `CONNECTION`(연결)으로 통일된다.
+설정 위치는 `supplier.endpoints.{a|b}.connect-timeout`(기본 1초)과 `response-timeout`(기본 3초)이고, `SupplierWebClients`가 공급사별 WebClient를 만들 때 적용한다(Spring Boot `HttpClientSettings` → reactor-netty 연결 타임아웃·응답 타임아웃). 값의 근거는 [README 4.5](../README.md)에 있다. 초과하면 `FailureReason.TIMEOUT`(응답) 또는 `CONNECTION`(연결)으로 통일된다.
 
 ### 4.4 부분 실패 처리
 

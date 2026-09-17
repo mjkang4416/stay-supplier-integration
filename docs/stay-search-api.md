@@ -1,6 +1,6 @@
 # API 명세
 
-> 확정된 설계를 명세한다. 결정의 근거는 [README.md](../README.md) 5.4, 결정 과정은 [JOURNAL.md](../JOURNAL.md)에 있다.
+> 확정된 설계를 명세한다. 결정의 근거는 [README.md](../README.md) 4.4, 결정 과정은 [JOURNAL.md](../JOURNAL.md)에 있다.
 
 ## 1. 통합 검색 API
 
@@ -88,7 +88,7 @@
 `availableRooms` = 요청 기간(체크인일 ~ 체크아웃 전날)의 날짜별 `remainingRooms` 중 최솟값. 하루라도 0이면 0이고 예약 불가다. 요금은 A는 날짜별 (nightlyRate + taxAmount)의 합, B는 totalPrice 그대로. 응답이 객실 타입 단위라 호실 배정·업그레이드·분할 예약은 다루지 않는다.
 
 ### 2.3 예약 불가 상품 처리
-`availableRooms == 0`인 객실 타입은 기본으로 응답에서 뺀다. 객실 타입이 모두 빠진 숙소도 뺀다. `includeSoldOut=true`면 `availableRooms: 0`으로 포함한다. 근거는 [README 5.4](../README.md).
+`availableRooms == 0`인 객실 타입은 기본으로 응답에서 뺀다. 객실 타입이 모두 빠진 숙소도 뺀다. `includeSoldOut=true`면 `availableRooms: 0`으로 포함한다. 근거는 [README 4.4](../README.md).
 
 ### 2.4 병합 규칙
 1. 공급사 코드를 매핑으로 내부 식별자로 바꾼다. 매핑에 없는 코드(지난 새벽 이후 추가된 상품)는 버리고 로그를 남긴다. 다음 새벽 크론잡이 채우면 그때부터 나온다.

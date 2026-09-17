@@ -47,7 +47,7 @@
 | `remainingRooms` (`SupplierDailyOffer`, 캐시) | int | 그날 예약 가능한 객실 수 | 그대로 |
 | `availableRooms` (`SupplierRoomOffer`, 응답) | int | 요청 기간 전체를 예약할 수 있는 객실 수 | 기간 내 날짜별 재고의 최솟값. 0이면 예약 불가 |
 
-별도 boolean은 두지 않는다. 0을 응답에서 뺄지는 [README 5.4](../README.md).
+별도 boolean은 두지 않는다. 0을 응답에서 뺄지는 [README 4.4](../README.md).
 
 ## 2. 공급사 필드 대응
 
