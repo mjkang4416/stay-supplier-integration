@@ -255,6 +255,7 @@ Reactor `Flux.merge`는 하나라도 에러면 전체를 취소하므로, 실패
 - 테스트 클래스마다 Redis 컨테이너를 새로 띄우자 전체 실행에서만 연결 거부가 남. 컨테이너를 테스트 JVM에서 하나만 띄워 공유(싱글턴)하고 "Ready to accept connections" 로그를 기다린 뒤 ping으로 확인해 해결
 - Mock이 날짜와 무관하게 9/1~9/3 고정 응답을 줘서 갱신 잡의 창(오늘~+30일)과 맞지 않아 캐시가 비었어요. Mock을 날짜 범위대로 생성하도록 바꿨어요(패턴 기준일 9/1이라 예제 값은 그대로)
 - 기존 검색 테스트는 캐시가 없는 상태를 가정하므로 캐시를 mock으로 비워 두고, 캐시 경로는 실제 Redis 컨테이너로 따로 검증
+- 문서를 다시 읽다가 체크아웃이 캐시 창(오늘~+30일) 밖인 숙박은 날짜 칸 일부만 있어 숙소가 캐시 응답으로 처리되고 객실 타입은 전부 빠져 결과에서 사라지는 문제를 발견했어요. 요청 기간을 채운 객실 타입이 하나도 없으면 직접 호출로 넘기도록 고치고 테스트를 추가했어요
 - 문서 점검 중 갱신 잡이 Hash에 필드를 덧쓰기만 하고 TTL을 매번 연장해 지난 날짜 필드가 영원히 쌓이는 문제를 발견. 쓸 때 MULTI로 DEL → HSET → EXPIRE 해 통째로 교체하도록 고침
 #### 포기한 것과 이유
 - 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트: 숙소 3개로는 의미가 없고 설정값과 문서로 충분
@@ -280,7 +281,7 @@ Reactor `Flux.merge`는 하나라도 에러면 전체를 취소하므로, 실패
 
 ### 결과
 
-`./gradlew test` 76개 통과 (2026-09-17 기준. Docker가 떠 있어야 Testcontainers 통합 테스트가 돌아요).
+`./gradlew test` 77개 통과 (2026-09-17 기준. Docker가 떠 있어야 Testcontainers 통합 테스트가 돌아요).
 
 | 층 | 테스트 | 개수 | 검증한 것 |
 |---|---|---|---|
@@ -291,7 +292,7 @@ Reactor `Flux.merge`는 하나라도 에러면 전체를 취소하므로, 실패
 | 어댑터 HTTP (WireMock) | SupplierAClientTest | 14 | 목록·재고 정규화(429,000 / 302,500), 날짜별 조회(기간 한 번 호출), X-Api-Key, 상태 코드 판정, Retry-After, 타임아웃, 연결 실패, 50개 분할, 묶음 부분·전부 실패, 날짜 수 불일치, 0건 vs 구조 누락 |
 | 어댑터 HTTP (WireMock) | SupplierBClientTest | 11 | HTTP 200 + resultCode 실패 판정, 모르는 코드, data 누락, 0건, 최대 인원 미상, 재고·요금 정규화(452,000), 날짜별 조회(1박씩 호출) |
 | 단위 | StaySearchServiceTest | 10 | 병합·내부 id 변환, 예약 불가 제외·포함, 인원 필터, 최대 인원 출처, 부분 실패·묶음 실패 표시, 전부 실패 예외, 즉시 1회 재시도(타임아웃 제외), 미매핑 코드, 요청 검증 |
-| 단위 (Redis 컨테이너) | StaySearchServiceCacheTest | 5 | 전부 캐시면 공급사 호출 0, 없는 숙소만 직접 호출, fresh=true, 상태 키 실패 표시, Redis 장애 시 저하 모드 |
+| 단위 (Redis 컨테이너) | StaySearchServiceCacheTest | 6 | 전부 캐시면 공급사 호출 0, 없는 숙소만 직접 호출, 창 경계에 걸친 숙박은 직접 호출, fresh=true, 상태 키 실패 표시, Redis 장애 시 저하 모드 |
 | 캐시 (Redis 컨테이너) | AvailabilityCacheTest, AvailabilityRefreshJobTest | 7 | Hash 쓰기·TTL·파이프라인 읽기, Hash 통째 교체(지난 날짜 필드가 쌓이지 않음), 값 형식, 상태 키, 갱신 잡의 창 채우기·미매핑 제외·실패 공급사 격리, 429 지수 백오프(다른 실패는 재시도 안 함) |
 | 웹 슬라이스 | StaySearchControllerTest | 4 | 200 JSON 형태, 400(검증·누락·형식), 503 + Retry-After |
 | 컨텍스트 | StaySupplierIntegrationApplicationTests | 1 | 로컬 MySQL로 기동 |

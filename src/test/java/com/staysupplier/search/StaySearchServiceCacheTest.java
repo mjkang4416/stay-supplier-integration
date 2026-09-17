@@ -121,6 +121,21 @@ class StaySearchServiceCacheTest {
 	}
 
 	@Test
+	void callsSupplierWhenCachedWindowDoesNotCoverTheWholeStay() {
+		prefill(1L, 11L, 3, 1); // 3박 중 2박만 캐시에 있음 (창 경계에 걸친 숙박)
+		StubClient a = new StubClient(Supplier.A).willReturn(new SupplierFetchResult(List.of(
+				new SupplierRoomOffer(Supplier.A, "A-10023", "DLX-TWN", "Deluxe Twin", 2, 1, 429_000L, "KRW", false)), List.of()));
+		StubClient b = new StubClient(Supplier.B).willReturn(SupplierFetchResult.empty());
+
+		StaySearchResponse response = service(cache, a, b).search(request(false));
+
+		assertThat(a.calls()).isEqualTo(1);
+		assertThat(a.lastQuery().hotelCodes()).containsExactly("A-10023");
+		assertThat(response.stays()).extracting(Stay::hotelId).containsExactly(1L);
+		assertThat(response.stays().get(0).roomTypes().get(0).price().total()).isEqualTo(429_000L);
+	}
+
+	@Test
 	void freshSkipsRedisAndCallsEverySupplier() {
 		prefill(1L, 11L, 3, 1, 5);
 		StubClient a = new StubClient(Supplier.A).willReturn(new SupplierFetchResult(List.of(

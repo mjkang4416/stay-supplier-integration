@@ -155,6 +155,7 @@ public class StaySearchService {
 		int served = 0;
 		for (Map.Entry<Long, Map<String, CachedRate>> entry : cached.entrySet()) {
 			HotelEntry hotel = hotels.get(entry.getKey());
+			int completeRoomTypes = 0;
 			for (RoomTypeEntry roomType : hotel.roomTypes()) {
 				int availableRooms = Integer.MAX_VALUE;
 				long total = 0;
@@ -175,13 +176,17 @@ public class StaySearchService {
 					maxOccupancy = rate.maxOccupancy();
 				}
 				if (!complete) {
-					continue; // 이 객실 타입은 이번 창에 값이 없음 (창 밖 날짜 등). 숙소 자체는 캐시로 응답
+					continue; // 이 객실 타입은 요청 기간 전체의 값이 없음 (창 경계에 걸친 숙박 등)
 				}
+				completeRoomTypes++;
 				SupplierRoomOffer offer = new SupplierRoomOffer(hotel.supplier(), hotel.code(), roomType.code(),
 						roomType.name(), maxOccupancy, availableRooms, total, currency, breakfast);
 				toRoomType(offer, request).ifPresent(mapped -> roomTypesByHotel
 					.computeIfAbsent(mapped.hotelId(), id -> new ArrayList<>())
 					.add(mapped.roomType()));
+			}
+			if (completeRoomTypes == 0) {
+				continue; // 요청 기간을 채운 객실 타입이 하나도 없으면 캐시로 답하지 않고 직접 호출로 넘긴다
 			}
 			missing.remove(entry.getKey());
 			served++;
