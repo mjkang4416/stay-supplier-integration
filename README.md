@@ -74,6 +74,10 @@ flowchart LR
 
 유스케이스별 기본·대안 흐름은 [architecture.md 3장](docs/architecture.md)에 있어요.
 
+아래 그림을 클릭하면 노드별 코드 출처·상수, 스토리 재생(검색 요청의 왕복 · 부팅과 배치), 시퀀스 뷰가 있는 인터랙티브 로직 지도가 열려요.
+
+[![로직 지도 미리보기](docs/images/system-story.png)](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)
+
 ## 4. 설계 결정
 
 결정마다 선택·근거·잃는 것을 적어요. 선택지 비교와 폐기한 대안은 [JOURNAL.md](JOURNAL.md)의 "설계 의사결정 기록"에 있어요.
@@ -243,7 +247,9 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 │   ├── architecture.md             #   전체 구성, 유스케이스, 공급사 연동, Mock, 테스트 구성
 │   ├── stay-model.md               #   표준 숙박 상품 모델, 공급사 필드 대응, 매핑
 │   ├── stay-search-api.md          #   통합 검색 API 명세
-│   └── domain-research.md          #   도메인 리서치 원페이저
+│   ├── domain-research.md          #   도메인 리서치 원페이저
+│   ├── system-story.html           #   인터랙티브 로직 지도 (GitHub Pages 로 열림)
+│   └── images/                     #   README 미리보기 이미지
 ├── build.gradle.kts                # 본 앱 빌드
 ├── settings.gradle.kts             # 모듈 등록
 ├── mise.toml                       # JDK 21 고정
@@ -286,4 +292,5 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 - [docs/stay-model.md](docs/stay-model.md): 통합 모델 설계 (표준 모델, 공급사 필드 대응, 매핑)
 - [docs/stay-search-api.md](docs/stay-search-api.md): API 명세
 - [docs/domain-research.md](docs/domain-research.md): 도메인 리서치 원페이저 (공급사 구조, 공급사 간 표현 차이)
+- [docs/system-story.html](https://mjkang4416.github.io/stay-supplier-integration/system-story.html): 인터랙티브 로직 지도 (존·노드·스토리 재생, GitHub Pages)
 - [JOURNAL.md](JOURNAL.md): 설계 의사결정 기록, 진행 기록, 테스트 전략과 결과, AI 활용 기록

@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>stay-supplier-integration 로직 지도</title>
+<meta name="description" content="검색 요청이 Redis·공급사·매핑을 거쳐 응답이 되기까지의 경로와 실패 계약">
+<meta name="doc-tags" content="stay, supplier, search, cache, mapping, webclient">
+<meta name="doc-owners" content="mjkang4416">
+<style>
+  :root{
+    --bg:#0f1115;--panel:#171b22;--panel-2:#212734;--panel-3:#2a3140;
+    --ink:#eef1f6;--ink-2:#c4cdd9;--ink-dim:#8b95a4;--line:#2b323d;--line-2:#39414f;
+    --accent:#ff7e36;--accent-dim:rgba(255,126,54,.14);
+    --ssr:#3fb950;--ssr-dim:rgba(63,185,80,.13);--amber:#d29922;--amber-dim:rgba(210,153,34,.14);
+    --red:#f85149;--red-dim:rgba(248,81,73,.12);--bff:#58a6ff;--bff-dim:rgba(88,166,255,.13);--violet:#a371f7;--violet-dim:rgba(163,113,247,.13);
+    --gray:#8b95a4;--code:#ffd9bf;--node:#1c2029;--edge:#59616f;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard",Roboto,"Segoe UI",sans-serif;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.2);
+  }
+  @media (prefers-color-scheme:light){:root{
+    --bg:#fbfaf8;--panel:#ffffff;--panel-2:#f5f3ef;--panel-3:#ece9e3;
+    --ink:#14181f;--ink-2:#3f4855;--ink-dim:#77808d;--line:#e6e3dd;--line-2:#d6d2ca;
+    --accent:#d95d18;--accent-dim:rgba(217,93,24,.1);--ssr:#1a7f37;--ssr-dim:rgba(26,127,55,.09);
+    --amber:#9a6700;--amber-dim:rgba(154,103,0,.1);--red:#cf222e;--red-dim:rgba(207,34,46,.08);--bff:#0969da;--bff-dim:rgba(9,105,218,.08);
+    --violet:#8250df;--violet-dim:rgba(130,80,223,.09);--gray:#77808d;--code:#a8460f;--node:#ffffff;--edge:#b7b1a6;
+    --shadow:0 1px 2px rgba(20,24,31,.05),0 8px 22px rgba(20,24,31,.07);
+  }}
+  :root[data-theme="dark"]{--bg:#0f1115;--panel:#171b22;--panel-2:#212734;--panel-3:#2a3140;--ink:#eef1f6;--ink-2:#c4cdd9;--ink-dim:#8b95a4;--line:#2b323d;--line-2:#39414f;--accent:#ff7e36;--accent-dim:rgba(255,126,54,.14);--ssr:#3fb950;--ssr-dim:rgba(63,185,80,.13);--amber:#d29922;--amber-dim:rgba(210,153,34,.14);--red:#f85149;--red-dim:rgba(248,81,73,.12);--bff:#58a6ff;--bff-dim:rgba(88,166,255,.13);--violet:#a371f7;--violet-dim:rgba(163,113,247,.13);--gray:#8b95a4;--code:#ffd9bf;--node:#1c2029;--edge:#59616f;--shadow:0 1px 2px rgba(0,0,0,.4),0 8px 22px rgba(0,0,0,.2);}
+  :root[data-theme="light"]{--bg:#fbfaf8;--panel:#ffffff;--panel-2:#f5f3ef;--panel-3:#ece9e3;--ink:#14181f;--ink-2:#3f4855;--ink-dim:#77808d;--line:#e6e3dd;--line-2:#d6d2ca;--accent:#d95d18;--accent-dim:rgba(217,93,24,.1);--ssr:#1a7f37;--ssr-dim:rgba(26,127,55,.09);--amber:#9a6700;--amber-dim:rgba(154,103,0,.1);--red:#cf222e;--red-dim:rgba(207,34,46,.08);--bff:#0969da;--bff-dim:rgba(9,105,218,.08);--violet:#8250df;--violet-dim:rgba(130,80,223,.09);--gray:#77808d;--code:#a8460f;--node:#ffffff;--edge:#b7b1a6;--shadow:0 1px 2px rgba(20,24,31,.05),0 8px 22px rgba(20,24,31,.07);}
+
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.62;font-size:15px;-webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1200px;margin:0 auto;padding:38px 18px 320px;}
+  code{font-family:var(--mono);font-size:.84em;background:var(--panel-2);padding:1px 5px;border-radius:5px;color:var(--code);border:1px solid var(--line);}
+
+  header.doc{border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:14px;}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0 0 9px;}
+  h1{font-size:24px;line-height:1.18;letter-spacing:-.5px;margin:0 0 10px;font-weight:800;text-wrap:balance;}
+  .thesis{color:var(--ink-2);font-size:14px;margin:0;max-width:78ch;}
+  .thesis b{color:var(--ink);}
+  .thesis a{color:var(--bff);}
+
+  .scentabs{display:flex;flex-direction:column;gap:6px;margin:16px 0 4px;}
+  .srow{display:flex;flex-wrap:wrap;gap:7px;align-items:center;}
+  .scat{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.08em;color:var(--ink-dim);text-transform:uppercase;min-width:132px;padding-left:10px;border-left:2px solid var(--line-2);}
+  .stab{background:var(--panel);border:1px solid var(--line);color:var(--ink-2);padding:7px 13px;border-radius:10px;
+    font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;transition:all .14s ease;}
+  .stab:hover{border-color:var(--line-2);color:var(--ink);}
+  .stab[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-dim);}
+  .stab.all[aria-pressed="true"]{border-color:var(--ink-dim);color:var(--ink);background:var(--panel-3);}
+
+  .stage{border:1px solid var(--line);border-radius:16px;background:var(--panel);box-shadow:var(--shadow);padding:6px;overflow-x:auto;margin-top:10px;}
+  svg.map{display:block;width:100%;min-width:1120px;height:auto;}
+
+  .node{cursor:pointer;}
+  .node .box{fill:var(--node);stroke:var(--line-2);stroke-width:1.4;}
+  .node:hover .box{stroke:var(--ink-dim);}
+  .node.sel .box{stroke:var(--accent);stroke-width:2.6;}
+  .node.hl .box{stroke:var(--ssr);stroke-width:2;}
+  .node.fb .box{stroke:var(--red);stroke-width:1.4;fill:var(--red-dim);}
+  .node .box.cfg{stroke-dasharray:4 3;}
+  .node .t{font:700 12px var(--sans);fill:var(--ink);pointer-events:none;}
+  .node .t.sm{font-size:10.5px;} .node .s{font:400 9px var(--mono);fill:var(--ink-dim);pointer-events:none;}
+  .grp{fill:color-mix(in srgb,var(--bff) 6%,transparent);stroke:var(--bff);stroke-width:1.3;stroke-dasharray:2 3;}
+  .grp.gry{fill:color-mix(in srgb,var(--gray) 7%,transparent);stroke:var(--gray);}
+  .grp.red{fill:color-mix(in srgb,var(--red) 5%,transparent);stroke:var(--red);}
+  .grp.amb{fill:color-mix(in srgb,var(--amber) 5%,transparent);stroke:var(--amber);}
+  .grp.grn{fill:color-mix(in srgb,var(--ssr) 5%,transparent);stroke:var(--ssr);}
+  .glabel{font:600 10px var(--mono);letter-spacing:.05em;}
+  .node .mchip{fill:var(--panel-2);stroke:var(--line);stroke-width:1;pointer-events:none;}
+  .node .mtx{font:600 8px var(--mono);fill:var(--ink-2);pointer-events:none;}
+  .node .mlabel{font:700 8.5px var(--mono);fill:var(--bff);pointer-events:none;}
+  .zonelabel{font:700 12px var(--sans);fill:var(--accent);}
+
+  .edge{cursor:pointer;}
+  .edge .hit{stroke:transparent;stroke-width:14;fill:none;}
+  .edge .ln{stroke:var(--edge);stroke-width:1.6;fill:none;}
+  .edge:hover .ln{stroke:var(--ink-2);stroke-width:2.1;}
+  .edge.sel .ln{stroke:var(--accent);stroke-width:2.8;}
+  .edge .el{font:600 9.5px var(--mono);fill:var(--ink-dim);pointer-events:none;}
+  .edge .el.a{fill:var(--ssr);} .edge .el.st{fill:var(--amber);} .edge .el.rd{fill:var(--red);} .edge .el.bl{fill:var(--bff);}
+
+  svg.scen [data-k]{transition:opacity .18s ease;}
+  svg.scen .node:not(.on){opacity:.18;}
+  svg.scen .edge:not(.on){opacity:.12;}
+
+  .dock{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;width:min(1160px,calc(100vw - 24px));z-index:60;display:flex;flex-direction:column;gap:8px;pointer-events:none;}
+  .dock .ctrl,.dock .panel,.dock .dockrow{pointer-events:auto;}
+  .dockrow{display:flex;justify-content:flex-end;}
+  .cbtn.dockmin{padding:4px 12px;font-size:11.5px;font-weight:700;color:var(--ink-dim);border-radius:9px;background:color-mix(in srgb,var(--panel) 80%,transparent);backdrop-filter:blur(8px);}
+  .dock.min .panel{display:none;}
+  .nextchain{margin-top:12px;padding-top:12px;border-top:1px dashed var(--line);}
+  .nextchain .cbtn{font-size:13px;}
+  .dock.min .ctrl{margin-top:0;}
+  .panel{border:1px solid var(--line);border-radius:14px;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:var(--shadow);padding:16px 20px;min-height:0;max-height:34vh;overflow-y:auto;}
+  .dock .ctrl{margin-top:0;background:color-mix(in srgb,var(--panel) 90%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);}
+  .panel .empty{color:var(--ink-dim);font-size:13.5px;}
+  .panel .kind{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 10px;border-radius:999px;margin-bottom:9px;}
+  .k-node{color:var(--bff);background:var(--bff-dim);border:1px solid var(--bff);}
+  .k-edge{color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent);}
+  .k-boot{color:var(--amber);background:var(--amber-dim);border:1px solid var(--amber);}
+  .k-req{color:var(--ssr);background:var(--ssr-dim);border:1px solid var(--ssr);}
+  .k-fb{color:var(--red);background:var(--red-dim);border:1px solid var(--red);}
+  .k-ext{color:var(--violet);background:var(--violet-dim);border:1px solid var(--violet);}
+  .k-obs{color:var(--gray);background:var(--panel-2);border:1px solid var(--gray);}
+  .k-scen{color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent);}
+  .panel h3{margin:0 0 8px;font-size:17px;font-weight:800;letter-spacing:-.2px;}
+  .panel h3 .en{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);font-weight:600;margin-left:8px;}
+  .panel p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.66;}
+  .panel .ours{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12.7px;color:var(--ink-dim);}
+  .panel .ours b{color:var(--ink-2);}
+  .panel ol.steps{margin:6px 0 0;padding-left:22px;font-size:13.5px;color:var(--ink-2);line-height:1.7;}
+  .panel ol.steps li{margin:5px 0;} .panel ol.steps li b{color:var(--ink);}
+  .panel ol.steps li::marker{color:var(--accent);font-weight:700;}
+  .panel .lead{font-size:14.5px;font-weight:600;color:var(--ink);margin:0 0 10px;line-height:1.62;}
+  .panel ul.facts{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:7px;}
+  .panel ul.facts li{position:relative;padding-left:15px;font-size:13.5px;color:var(--ink-2);line-height:1.64;}
+  .panel ul.facts li::before{content:'';position:absolute;left:2px;top:9px;width:5px;height:5px;border-radius:2px;background:var(--accent);opacity:.75;}
+  .panel ul.facts li b{color:var(--ink);}
+  .panel .src{margin-top:11px;font-family:var(--mono);font-size:11px;color:var(--ink-dim);}
+  .panel .src::before{content:'SoT · ';color:var(--accent);font-weight:700;}
+  .panel pre{margin:11px 0 0;padding:11px 13px;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;overflow-x:auto;}
+  .panel pre code{display:block;background:none;border:none;padding:0;font-size:11.5px;line-height:1.6;color:var(--ink-2);white-space:pre;}
+  .panel .links{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px;}
+  .panel .links a{font-family:var(--mono);font-size:11px;color:var(--bff);border:1px solid var(--line);background:var(--panel-2);padding:3px 9px;border-radius:7px;text-decoration:none;}
+  .panel .links a:hover{border-color:var(--bff);}
+
+  .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+  .lg{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--ink-2);background:var(--panel);border:1px solid var(--line);padding:4px 11px;border-radius:999px;}
+  .lg .d{width:11px;height:11px;border-radius:3px;}
+  .d.s{background:var(--ssr);} .d.r{background:var(--red);} .d.a{background:var(--amber);} .d.b{background:var(--bff);} .d.g{background:var(--gray);}
+
+  footer{margin-top:38px;padding-top:16px;border-top:1px solid var(--line);color:var(--ink-dim);font-size:12px;line-height:1.7;}
+  .stab.story[aria-pressed="true"]{border-color:var(--ssr);color:var(--ssr);background:var(--ssr-dim);}
+  .ctrl{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;}
+  .ctrl[hidden]{display:none;}
+  .cbtn{background:var(--panel);border:1px solid var(--line);color:var(--ink);padding:8px 16px;border-radius:11px;font-size:13.5px;font-weight:800;cursor:pointer;font-family:inherit;}
+  .cbtn:hover:not(:disabled){border-color:var(--accent);color:var(--accent);}
+  .cbtn:disabled{opacity:.35;cursor:default;}
+  .cbtn.primary{border-color:var(--accent);color:var(--accent);background:var(--accent-dim);}
+  .prog{font-family:var(--mono);font-size:13px;color:var(--ink-dim);margin-left:auto;}
+  .prog b{color:var(--ink);}
+  @keyframes stpulse{0%,100%{opacity:1}50%{opacity:.5}}
+  svg .node.cur .box{stroke:var(--accent);stroke-width:3;}
+  svg .edge.cur .ln{stroke:var(--accent);stroke-width:3;}
+  svg .cur{animation:stpulse 1.15s ease-in-out infinite;}
+  .cbtn.vtg[aria-pressed="true"]{border-color:var(--bff);color:var(--bff);background:var(--bff-dim);}
+
+  #seqsvg .lanehead{fill:var(--panel-2);stroke:var(--line-2);stroke-width:1.2;}
+  #seqsvg .lanehead.us{stroke:var(--ssr);stroke-width:1.6;}
+  #seqsvg .lanehead.infra{stroke-dasharray:4 3;}
+  #seqsvg .lanename{font:700 12px var(--sans);fill:var(--ink);}
+  #seqsvg .lanesub{font:400 9.5px var(--mono);fill:var(--ink-dim);}
+  #seqsvg .lifeline{stroke:var(--line-2);stroke-width:1;stroke-dasharray:3 5;}
+  #seqsvg .st{opacity:.13;transition:opacity .2s ease;cursor:pointer;}
+  #seqsvg .st:hover .lb{fill:var(--ink);}
+  #seqsvg .lanehg{cursor:pointer;}
+  #seqsvg .lanehg:hover .lanehead{stroke:var(--ink-dim);}
+  #seqsvg .st.on{opacity:1;}
+  #seqsvg .st .ln{stroke:var(--edge);stroke-width:1.7;fill:none;}
+  #seqsvg .st.cur .ln{stroke:var(--accent);stroke-width:2.8;}
+  #seqsvg .st .lb{font:600 11px var(--mono);fill:var(--ink-2);}
+  #seqsvg .st.cur .lb{fill:var(--accent);font-weight:700;}
+  #seqsvg .st .selfbox{fill:var(--node);stroke:var(--line-2);stroke-width:1.3;}
+  #seqsvg .st.cur .selfbox{stroke:var(--accent);stroke-width:2.4;}
+  #seqsvg .st.done .selfbox{stroke:var(--ssr);fill:var(--ssr-dim);}
+  #seqsvg .st.done .lb{fill:var(--ssr);}
+  #seqsvg .st .num{font:800 10.5px var(--mono);fill:var(--ink-dim);}
+  #seqsvg .st.cur .num{fill:var(--accent);}
+  #seqsvg .st.cur{animation:stpulse 1.15s ease-in-out infinite;}
+  h2.sec{font-size:19px;letter-spacing:-.3px;margin:48px 0 6px;font-weight:800;}
+  .sub{color:var(--ink-dim);font-size:13.5px;margin:0 0 18px;max-width:72ch;}
+  .sub a{color:var(--bff);}
+
+  .fbmwrap{border:1px solid var(--line);border-radius:12px;overflow-x:auto;background:var(--panel);}
+  table.fbm{width:100%;border-collapse:collapse;font-size:12.5px;border:none;min-width:900px;}
+  table.fbm th{background:var(--panel-2);color:var(--ink-2);font-weight:700;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line-2);white-space:nowrap;}
+  table.fbm td{padding:9px 12px;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top;line-height:1.55;}
+  table.fbm tr:last-child td{border-bottom:none;}
+  table.fbm td b{color:var(--ink);}
+  table.fbm .ec{font-family:var(--mono);font-size:11.5px;color:var(--red);font-weight:700;white-space:nowrap;}
+  table.fbm .ec.ok{color:var(--ssr);}
+  table.fbm .num{font-family:var(--mono);font-size:11.5px;color:var(--amber);font-weight:700;white-space:nowrap;}
+
+  .glo{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
+  .term{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;}
+  .term dt{font-size:13.5px;font-weight:800;margin:0 0 5px;}
+  .term dt .en{font-family:var(--mono);font-size:11px;color:var(--ink-dim);font-weight:600;margin-left:5px;}
+  .term dd{margin:0;font-size:12.7px;color:var(--ink-2);line-height:1.6;}
+  .term dd b{color:var(--ink);}
+  @media (max-width:560px){h1{font-size:20px;}}
+</style>
+
+<div class="wrap">
+  <header class="doc">
+    <p class="eyebrow">stay-supplier-integration · Logic Map</p>
+    <h1>검색 요청 하나는 어떻게 두 공급사의 상품이 되어 돌아오는가</h1>
+    <p class="thesis"><b>위에서 아래로</b> 부팅(1회) → 요청 파이프라인(매 요청) → 배치(크론잡·갱신 잡) → 실패/폴백 스택이에요. 오른쪽 열은 외부 의존이에요. <b>▶ 스토리</b>는 단계 재생이에요. [다음 ▶] 또는 키보드 ◀▶, 🗺/📊 로 지도와 시퀀스를 오가요. 박스·선을 클릭하면 코드 출처(SoT)와 상수가 나와요.</p>
+    <div class="scentabs" role="group" aria-label="시나리오">
+      <div class="srow"><button class="stab all" data-s="all" aria-pressed="true">전체 보기</button></div>
+      <div class="srow"><span class="scat">스토리</span>
+        <button class="stab story" data-st="req" aria-pressed="false">▶ 검색 요청의 왕복</button>
+        <button class="stab story" data-st="boot" aria-pressed="false">▶ 부팅과 배치</button></div>
+      <div class="srow"><span class="scat">계약</span>
+        <button class="stab" data-s="s_err" aria-pressed="false">① 에러 계약</button>
+        <button class="stab" data-s="s_retry" aria-pressed="false">② 재시도 정책 3종</button>
+        <button class="stab" data-s="s_cache" aria-pressed="false">③ 캐시 상태</button></div>
+    </div>
+  </header>
+
+  <style>.wrap{max-width:1500px;} header.doc,.scentabs,.fbmwrap,.glo,h2.sec,.sub,footer,.legend{max-width:1200px;margin-left:auto;margin-right:auto;} svg.map{min-width:1460px;}</style>
+  <div class="stage" id="mapstage">
+    <svg class="map" id="mapsvg" viewBox="0 0 1460 760" role="img" aria-label="로직 지도">
+      <defs>
+        <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L7,3.2 L0,6.4 Z" fill="var(--edge)"/></marker>
+        <marker id="arrS" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L7,3.2 L0,6.4 Z" fill="var(--ssr)"/></marker>
+        <marker id="arrA" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L7,3.2 L0,6.4 Z" fill="var(--amber)"/></marker>
+        <marker id="arrR" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L7,3.2 L0,6.4 Z" fill="var(--red)"/></marker>
+        <marker id="arrB" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L7,3.2 L0,6.4 Z" fill="var(--bff)"/></marker>
+        <marker id="arrG" markerWidth="8" markerHeight="8" refX="6" refY="2.8" orient="auto"><path d="M0,0 L6,2.8 L0,5.6 Z" fill="var(--gray)"/></marker>
+      </defs>
+      <text class="zonelabel" x="30" y="28">부팅 · 프로세스 1회</text>
+      <text class="zonelabel" x="30" y="178">요청 파이프라인 · 매 요청</text>
+      <text class="zonelabel" x="1120" y="178">외부 의존</text>
+      <text class="zonelabel" x="420" y="432">배치 · 크론잡 04:00 · 리로드 04:30 · 갱신 잡 5분</text>
+      <text class="zonelabel" x="30" y="622">실패 · 폴백 스택</text>
+      <text class="zonelabel" x="1120" y="622">관측</text>
+      <rect class="grp amb" x="20" y="38" width="1080" height="110" rx="12"/>
+      <rect class="grp" x="20" y="188" width="1080" height="212" rx="12"/>
+      <rect class="grp gry" x="1108" y="188" width="290" height="350" rx="12"/>
+      <rect class="grp amb" x="20" y="440" width="1080" height="110" rx="12"/>
+      <rect class="grp red" x="20" y="630" width="1080" height="110" rx="12"/>
+
+      <g class="edge" data-k="e_boot1"><path class="hit" d="M340,92 L380,92"/><path class="ln" d="M340,92 L380,92" marker-end="url(#arrA)" stroke="var(--amber)"/></g>
+      <g class="edge" data-k="e_boot2"><path class="hit" d="M680,92 L720,92"/><path class="ln" d="M680,92 L720,92" marker-end="url(#arrA)" stroke="var(--amber)"/></g>
+      <g class="edge" data-k="e_in"><path class="hit" d="M230,240 L260,240"/><path class="ln" d="M230,240 L260,240" marker-end="url(#arrS)" stroke="var(--ssr)"/></g>
+      <g class="edge" data-k="e_val"><path class="hit" d="M450,240 L480,240"/><path class="ln" d="M450,240 L480,240" marker-end="url(#arrS)" stroke="var(--ssr)"/></g>
+      <g class="edge" data-k="e_cache_gate"><path class="hit" d="M680,240 L710,240"/><path class="ln" d="M680,240 L710,240" marker-end="url(#arrS)" stroke="var(--ssr)"/></g>
+      <g class="edge" data-k="e_gate_fan"><path class="hit" d="M880,240 L910,240"/><path class="ln" d="M880,240 L910,240" marker-end="url(#arrS)" stroke="var(--ssr)"/></g>
+      <g class="edge" data-k="e_fan_adapter"><path class="hit" d="M995,270 L995,320"/><path class="ln" d="M995,270 L995,320" marker-end="url(#arrS)" stroke="var(--ssr)"/><text class="el a" x="1003" y="299">값 없는 숙소만</text></g>
+      <g class="edge" data-k="e_adapter_map"><path class="hit" d="M910,350 L680,350"/><path class="ln" d="M910,350 L680,350" marker-end="url(#arrS)" stroke="var(--ssr)"/><text class="el a" x="745" y="343">표준 형태</text></g>
+      <g class="edge" data-k="e_map_merge"><path class="hit" d="M480,350 L450,350"/><path class="ln" d="M480,350 L450,350" marker-end="url(#arrS)" stroke="var(--ssr)"/></g>
+      <g class="edge" data-k="e_merge_out"><path class="hit" d="M260,350 L230,350"/><path class="ln" d="M260,350 L230,350" marker-end="url(#arrS)" stroke="var(--ssr)"/></g>
+      <g class="edge" data-k="e_gate_merge"><path class="hit" d="M795,270 L795,300 L355,300 L355,320"/><path class="ln" d="M795,270 L795,300 L355,300 L355,320" marker-end="url(#arrS)" stroke="var(--ssr)" stroke-dasharray="4 3"/><text class="el a" x="520" y="294">캐시 값 (Redis 적중)</text></g>
+      <g class="edge" data-k="e_val_out"><path class="hit" d="M300,270 L300,300 L135,300 L135,320"/><path class="ln" d="M300,270 L300,300 L135,300 L135,320" marker-end="url(#arrR)" stroke="var(--red)"/><text class="el rd" x="180" y="294">400</text></g>
+      <g class="edge" data-k="e_cache_redis"><path class="hit" d="M580,210 L580,176 L1104,176 L1104,360 L1120,360"/><path class="ln" d="M580,210 L580,176 L1104,176 L1104,360 L1120,360" marker-end="url(#arrB)" stroke="var(--bff)"/><text class="el bl" x="760" y="170">HMGET 파이프라인 (숙소 × 객실타입 × 날짜)</text></g>
+      <g class="edge" data-k="e_adapter_sup"><path class="hit" d="M1080,350 L1100,350 L1100,245 L1120,245"/><path class="ln" d="M1080,350 L1100,350 L1100,245 L1120,245" marker-end="url(#arrB)" stroke="var(--bff)"/></g>
+      <g class="edge" data-k="e_cron_adapter"><path class="hit" d="M135,462 L135,412 L960,412 L960,380"/><path class="ln" d="M135,462 L135,412 L960,412 L960,380" marker-end="url(#arrB)" stroke="var(--bff)"/><text class="el bl" x="150" y="425">fetchHotels · 공급사별 병렬</text></g>
+      <g class="edge" data-k="e_refresh_adapter"><path class="hit" d="M795,462 L795,424 L980,424 L980,380"/><path class="ln" d="M795,462 L795,424 L980,424 L980,380" marker-end="url(#arrB)" stroke="var(--bff)"/><text class="el bl" x="806" y="437">fetchDaily · 초당 4회</text></g>
+      <g class="edge" data-k="e_cron_delta"><path class="hit" d="M230,494 L260,494"/><path class="ln" d="M230,494 L260,494" marker-end="url(#arrA)" stroke="var(--amber)"/></g>
+      <g class="edge" data-k="e_refresh_store"><path class="hit" d="M890,494 L920,494"/><path class="ln" d="M890,494 L920,494" marker-end="url(#arrA)" stroke="var(--amber)"/></g>
+      <g class="edge" data-k="e_store_redis"><path class="hit" d="M1080,494 L1112,494 L1112,380 L1120,380"/><path class="ln" d="M1080,494 L1112,494 L1112,380 L1120,380" marker-end="url(#arrB)" stroke="var(--bff)"/></g>
+      <g class="edge" data-k="e_delta_db"><path class="hit" d="M355,526 L355,600 L1250,600 L1250,526"/><path class="ln" d="M355,526 L355,600 L1250,600 L1250,526" marker-end="url(#arrB)" stroke="var(--bff)"/><text class="el bl" x="640" y="613">upsert · deactivate (트랜잭션 1개)</text></g>
+      <g class="edge" data-k="e_db_reload"><path class="hit" d="M1180,526 L1180,585 L575,585 L575,526"/><path class="ln" d="M1180,526 L1180,585 L575,585 L575,526" marker-end="url(#arrB)" stroke="var(--bff)"/><text class="el bl" x="820" y="579">findAllActive → 스냅샷 교체</text></g>
+
+      <g class="node" data-k="b_props"><rect class="box cfg" x="40" y="60" width="300" height="64" rx="10"/><text class="t sm" x="190" y="86" text-anchor="middle">설정 바인딩 → 공급사별 WebClient</text><text class="s" x="190" y="103" text-anchor="middle">SupplierProperties · 누락 시 기동 실패</text></g>
+      <g class="node" data-k="b_reg"><rect class="box" x="380" y="60" width="300" height="64" rx="10"/><text class="t sm" x="530" y="86" text-anchor="middle">인메모리 매핑 동기 로드</text><text class="s" x="530" y="103" text-anchor="middle">MappingRegistryLoader · 실패 시 기동 실패</text></g>
+      <g class="node" data-k="b_first"><rect class="box" x="720" y="60" width="300" height="64" rx="10"/><text class="t sm" x="870" y="86" text-anchor="middle">갱신 잡 첫 바퀴 (initialDelay 0)</text><text class="s" x="870" y="103" text-anchor="middle">CacheConfig.RefreshScheduler</text></g>
+
+      <g class="node" data-k="r_in"><rect class="box" x="40" y="210" width="190" height="60" rx="10"/><text class="t sm" x="135" y="234" text-anchor="middle">GET /api/v1/stays/search</text><text class="s" x="135" y="251" text-anchor="middle">StaySearchController</text></g>
+      <g class="node" data-k="r_val"><rect class="box" x="260" y="210" width="190" height="60" rx="10"/><text class="t sm" x="355" y="234" text-anchor="middle">요청 검증 (실패 → 400)</text><text class="s" x="355" y="251" text-anchor="middle">StaySearchRequest.validate</text></g>
+      <g class="node" data-k="r_cache"><rect class="box" x="480" y="210" width="200" height="60" rx="10"/><text class="t sm" x="580" y="234" text-anchor="middle">Redis 우선 읽기</text><text class="s" x="580" y="251" text-anchor="middle">readCache · fresh=false</text></g>
+      <g class="node" data-k="r_gate"><rect class="box" x="710" y="210" width="170" height="60" rx="10"/><text class="t sm" x="795" y="234" text-anchor="middle">값 없는 숙소 있나?</text><text class="s" x="795" y="251" text-anchor="middle">fresh=true 면 전부 직접</text></g>
+      <g class="node" data-k="r_fan"><rect class="box" x="910" y="210" width="170" height="60" rx="10"/><text class="t sm" x="995" y="234" text-anchor="middle">공급사 fan-out</text><text class="s" x="995" y="251" text-anchor="middle">Flux.flatMap · 1회 재시도</text></g>
+      <g class="node" data-k="r_out"><rect class="box" x="40" y="320" width="190" height="60" rx="10"/><text class="t sm" x="135" y="344" text-anchor="middle">응답 200 / 400 / 503</text><text class="s" x="135" y="361" text-anchor="middle">SearchExceptionHandler</text></g>
+      <g class="node" data-k="r_merge"><rect class="box" x="260" y="320" width="190" height="60" rx="10"/><text class="t sm" x="355" y="344" text-anchor="middle">숙소 단위 병합 · 확정</text><text class="s" x="355" y="361" text-anchor="middle">failures 수집 · 전부 실패 503</text></g>
+      <g class="node" data-k="r_map"><rect class="box" x="480" y="320" width="200" height="60" rx="10"/><text class="t sm" x="580" y="344" text-anchor="middle">표준 형태 → 내부 식별자</text><text class="s" x="580" y="361" text-anchor="middle">toRoomType · 인원·매진 필터</text></g>
+      <g class="node" data-k="r_adapter"><rect class="box" x="910" y="320" width="170" height="60" rx="10"/><text class="t sm" x="995" y="344" text-anchor="middle">어댑터 A·B · 50개 묶음</text><text class="s" x="995" y="361" text-anchor="middle">ChunkedFetch · 판정 통일</text></g>
+
+      <g class="node" data-k="j_cron"><rect class="box" x="40" y="462" width="190" height="64" rx="10"/><text class="t sm" x="135" y="488" text-anchor="middle">크론잡 (sync, 04:00)</text><text class="s" x="135" y="505" text-anchor="middle">MappingSyncJob.run · 30s×3</text></g>
+      <g class="node" data-k="j_delta"><rect class="box" x="260" y="462" width="190" height="64" rx="10"/><text class="t sm" x="355" y="488" text-anchor="middle">델타 반영 · 종료 코드</text><text class="s" x="355" y="505" text-anchor="middle">applyDelta · 사라짐 &gt;50% 보류</text></g>
+      <g class="node" data-k="j_reload"><rect class="box" x="480" y="462" width="190" height="64" rx="10"/><text class="t sm" x="575" y="488" text-anchor="middle">04:30 인메모리 리로드</text><text class="s" x="575" y="505" text-anchor="middle">reloadDaily · 실패 시 5m 뒤 1회</text></g>
+      <g class="node" data-k="j_refresh"><rect class="box" x="700" y="462" width="190" height="64" rx="10"/><text class="t sm" x="795" y="488" text-anchor="middle">갱신 잡 (5분마다)</text><text class="s" x="795" y="505" text-anchor="middle">refresh · 오늘~+30일 · 429 백오프</text></g>
+      <g class="node" data-k="j_store"><rect class="box" x="920" y="462" width="160" height="64" rx="10"/><text class="t sm" x="1000" y="488" text-anchor="middle">Hash 통째 교체 + 상태 키</text><text class="s" x="1000" y="505" text-anchor="middle">AvailabilityCache.write</text></g>
+
+      <g class="node fb" data-k="f_net"><rect class="box" x="40" y="660" width="200" height="64" rx="10"/><text class="t sm" x="140" y="686" text-anchor="middle">전송 오류 판정</text><text class="s" x="140" y="703" text-anchor="middle">classify → TIMEOUT · CONNECTION</text></g>
+      <g class="node fb" data-k="f_a"><rect class="box" x="270" y="660" width="200" height="64" rx="10"/><text class="t sm" x="370" y="686" text-anchor="middle">A: HTTP 상태 → FailureReason</text><text class="s" x="370" y="703" text-anchor="middle">SupplierFailures.fromStatus</text></g>
+      <g class="node fb" data-k="f_b"><rect class="box" x="500" y="660" width="200" height="64" rx="10"/><text class="t sm" x="600" y="686" text-anchor="middle">B: resultCode → FailureReason</text><text class="s" x="600" y="703" text-anchor="middle">SupplierBClient.reasonOf</text></g>
+      <g class="node fb" data-k="f_chunk"><rect class="box" x="730" y="660" width="170" height="64" rx="10"/><text class="t sm" x="815" y="686" text-anchor="middle">묶음 부분 실패</text><text class="s" x="815" y="703" text-anchor="middle">전부 실패해야 예외</text></g>
+      <g class="node fb" data-k="f_degrade"><rect class="box" x="930" y="660" width="150" height="64" rx="10"/><text class="t sm" x="1005" y="686" text-anchor="middle">저하 모드</text><text class="s" x="1005" y="703" text-anchor="middle">Redis 장애 · 키 없음</text></g>
+
+      <g class="node" data-k="x_sup"><rect class="box" x="1120" y="200" width="260" height="90" rx="10"/><text class="t sm" x="1250" y="222" text-anchor="middle">Supplier A · B (로컬 Mock)</text><text class="s" x="1250" y="237" text-anchor="middle">X-Api-Key · 연결 1s · 응답 3s</text><rect class="mchip" x="1132" y="246" width="72" height="16" rx="4"/><text class="mtx" x="1138" y="257.5">/a/v1/hotels</text><rect class="mchip" x="1212" y="246" width="104" height="16" rx="4"/><text class="mtx" x="1218" y="257.5">/a/v1/availability</text><rect class="mchip" x="1132" y="266" width="98" height="16" rx="4"/><text class="mtx" x="1138" y="277.5">/b/api/properties</text><rect class="mchip" x="1238" y="266" width="80" height="16" rx="4"/><text class="mtx" x="1244" y="277.5">/b/api/search</text></g>
+      <g class="node" data-k="x_redis"><rect class="box" x="1120" y="320" width="260" height="80" rx="10"/><text class="t sm" x="1250" y="342" text-anchor="middle">Redis · 요금·재고 캐시</text><text class="s" x="1250" y="357" text-anchor="middle">stay:v1:{hotelId} Hash · TTL 15m</text><rect class="mchip" x="1132" y="366" width="140" height="16" rx="4"/><text class="mtx" x="1138" y="377.5">stay:v1:status:{supplier}</text></g>
+      <g class="node" data-k="x_mysql"><rect class="box" x="1120" y="462" width="260" height="64" rx="10"/><text class="t sm" x="1250" y="488" text-anchor="middle">MySQL · 매핑만 저장</text><text class="s" x="1250" y="505" text-anchor="middle">hotel_mapping · room_type_mapping</text></g>
+
+      <g class="node" data-k="o_log"><rect class="box cfg" x="1120" y="660" width="260" height="64" rx="10"/><text class="t sm" x="1250" y="686" text-anchor="middle">warn/error 로그 + 상태 키</text><text class="s" x="1250" y="703" text-anchor="middle">지표·모니터는 설계만 (architecture 4.7)</text></g>
+    </svg>
+  </div>
+
+  <div class="stage" id="seqstage" hidden>
+    <svg id="seqsvg" xmlns="http://www.w3.org/2000/svg" style="display:block;width:100%;min-width:1240px;height:auto;"></svg>
+  </div>
+
+  <div class="dock" id="dock">
+  <div class="dockrow">
+    <button class="cbtn dockmin" id="dockmin" aria-pressed="false">⌄ 패널 접기</button>
+  </div>
+  <div class="ctrl" id="storybar" hidden>
+    <button class="cbtn" id="sprev">◀ 이전</button>
+    <button class="cbtn primary" id="snext">다음 ▶</button>
+    <button class="cbtn vtg" id="vmap" aria-pressed="true">🗺 로직 지도</button>
+    <button class="cbtn vtg" id="vseq" aria-pressed="false">📊 시퀀스 뷰</button>
+    <button class="cbtn" id="sexit">✕ 종료</button>
+    <span class="prog"><b id="scur">1</b> / <span id="stot">10</span></span>
+  </div>
+  <div class="panel" id="panel">
+    <p class="empty">👆 위 <b>시나리오 탭</b>을 누르면 해당 경로만 켜지고 단계 설명이 여기 나와요. <b>박스·선 클릭</b>은 개별 상세.</p>
+  </div>
+  </div>
+
+  <div class="legend">
+    <span class="lg"><span class="d s"></span> 요청 성공 경로</span>
+    <span class="lg"><span class="d r"></span> 실패 · 폴백</span>
+    <span class="lg"><span class="d a"></span> 부팅 · 배치</span>
+    <span class="lg"><span class="d b"></span> 외부 호출 (WebClient · MySQL · Redis)</span>
+    <span class="lg"><span class="d g"></span> 관측</span>
+    <span class="lg">점선 = 캐시 값 · soft 경로</span>
+  </div>
+
+  <h2 class="sec">에러 · 폴백 계약</h2>
+  <p class="sub">공급사가 실패를 알리는 방식은 다르지만 앱 안에서는 <code>FailureReason</code> 8가지 하나로만 흘러요. 같은 사유라도 호출하는 쪽(검색·크론잡·갱신 잡)에 따라 다루는 방법이 달라요.</p>
+  <div class="fbmwrap"><table class="fbm">
+    <thead><tr><th>공급사 신호</th><th>FailureReason</th><th>검색 (사용자 대기)</th><th>크론잡 (04:00)</th><th>갱신 잡 (5분)</th></tr></thead>
+    <tbody>
+      <tr><td>A <b>400</b> · 기타 4xx / B <code>E400</code></td><td class="ec">INVALID_REQUEST</td><td>재시도 없음 → <code>failures</code></td><td>재시도 없음 → 공급사 건너뜀</td><td>재시도 없음 → 상태 키 실패</td></tr>
+      <tr><td>A <b>401</b> / B <code>E401</code></td><td class="ec">UNAUTHORIZED</td><td>재시도 없음 → <code>failures</code></td><td>재시도 없음 → 건너뜀</td><td>재시도 없음 → 상태 키 실패</td></tr>
+      <tr><td>A <b>429</b> / B <code>E429</code></td><td class="ec">RATE_LIMITED</td><td>재시도 없음 → <code>failures</code>. 예산은 절반으로</td><td>고정 30초 × 3회</td><td>지수 백오프 1→2→4초, 60초 상한, 최대 5회. 예산 절반</td></tr>
+      <tr><td>A <b>5xx</b>(503 제외) / B <code>E500</code></td><td class="ec">SUPPLIER_ERROR</td><td>200ms 뒤 1회</td><td>고정 30초 × 3회</td><td>재시도 없음 → 상태 키 실패</td></tr>
+      <tr><td>A <b>503</b> / B <code>E503</code> (HTTP 는 200!)</td><td class="ec">UNAVAILABLE</td><td>200ms 뒤 1회</td><td>고정 30초 × 3회</td><td>재시도 없음 → 상태 키 실패</td></tr>
+      <tr><td>응답 3초 초과 (reactor-netty ReadTimeout)</td><td class="ec">TIMEOUT</td><td>재시도 없음 (3초를 두 번 쓰지 않음)</td><td>고정 30초 × 3회</td><td>재시도 없음 → 상태 키 실패</td></tr>
+      <tr><td>연결 1초 초과 · 연결 거부 (WebClientRequestException)</td><td class="ec">CONNECTION</td><td>200ms 뒤 1회</td><td>고정 30초 × 3회</td><td>재시도 없음 → 상태 키 실패</td></tr>
+      <tr><td>JSON 깨짐 · B <code>resultCode</code> 없음 · B 성공인데 <code>data</code> 없음 · 모르는 B 코드</td><td class="ec">INVALID_RESPONSE</td><td>재시도 없음 → <code>failures</code></td><td>재시도 없음 → 건너뜀</td><td>재시도 없음 → 상태 키 실패</td></tr>
+      <tr><td>묶음(50개) 중 일부 실패</td><td class="ec ok">부분 결과</td><td>성공 묶음은 응답, 실패 묶음은 <code>failures</code> + 숙소 수</td><td>해당 없음 (목록은 한 번 호출)</td><td>성공 묶음만 저장, 실패 묶음은 error 로그</td></tr>
+      <tr><td>공급사 전부 실패 (캐시 0건)</td><td class="ec">503</td><td><code>ALL_SUPPLIERS_FAILED</code> + <code>Retry-After: 5</code></td><td>종료 코드 1 → K8s 재시작</td><td>다음 바퀴에 다시. 값은 TTL 까지 유지</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 class="sec">숫자 계약</h2>
+  <p class="sub">모두 <code>application.properties</code> 의 설정값이에요. 부팅 시 한 번 바인딩되고 요청마다 다시 읽지 않아요.</p>
+  <div class="fbmwrap"><table class="fbm">
+    <thead><tr><th>항목</th><th>값</th><th>설정 키</th><th>적용 위치</th></tr></thead>
+    <tbody>
+      <tr><td>연결 타임아웃</td><td class="num">1s</td><td><code>supplier.endpoints.{a|b}.connect-timeout</code></td><td>SupplierWebClients (HttpClientSettings)</td></tr>
+      <tr><td>응답 타임아웃</td><td class="num">3s</td><td><code>supplier.endpoints.{a|b}.response-timeout</code></td><td>SupplierWebClients (readTimeout → reactor-netty responseTimeout)</td></tr>
+      <tr><td>재고·요금 요청당 숙소 상한</td><td class="num">50</td><td>코드 상수 <code>SupplierClient.MAX_HOTEL_CODES_PER_REQUEST</code></td><td>ChunkedFetch.split</td></tr>
+      <tr><td>공급사별 호출 예산</td><td class="num">4/s · 429면 ÷2 · 하한 0.5</td><td><code>supplier.rate-limit.per-second</code></td><td>SupplierRateLimiter.throttle</td></tr>
+      <tr><td>검색 재시도</td><td class="num">1회 · 200ms</td><td><code>search.retry-attempts</code>, <code>search.retry-delay</code></td><td>StaySearchService.retrySpec (CONNECTION · UNAVAILABLE · SUPPLIER_ERROR 만)</td></tr>
+      <tr><td>검색 최대 숙박일</td><td class="num">30박</td><td><code>search.max-nights</code></td><td>StaySearchRequest.validate</td></tr>
+      <tr><td>크론잡 재시도</td><td class="num">3회 · 30s 고정</td><td><code>mapping.sync.retry-attempts</code>, <code>mapping.sync.retry-delay</code></td><td>MappingSyncJob.retrySpec</td></tr>
+      <tr><td>사라짐 보류 비율</td><td class="num">0.5</td><td><code>mapping.sync.max-disappear-ratio</code></td><td>MappingSyncJob.applyDelta</td></tr>
+      <tr><td>인메모리 리로드</td><td class="num">04:30 Asia/Seoul · 실패 시 5m 뒤 1회</td><td><code>mapping.reload.cron</code>, <code>mapping.reload.zone</code>, <code>mapping.reload.retry-delay</code></td><td>MappingRegistryLoader.reloadDaily</td></tr>
+      <tr><td>갱신 잡 주기 · 창</td><td class="num">5m · 오늘~+30일</td><td><code>cache.refresh-interval</code>, <code>cache.window-days</code></td><td>CacheConfig.RefreshScheduler, AvailabilityRefreshJob.refresh</td></tr>
+      <tr><td>캐시 TTL</td><td class="num">주기 × 3 = 15m</td><td><code>cache.ttl-multiplier</code></td><td>AvailabilityCache.write (EXPIRE)</td></tr>
+      <tr><td>갱신 잡 429 백오프</td><td class="num">1s → 2 → 4 … 60s 상한 · 5회</td><td><code>cache.rate-limit-backoff</code>, <code>cache.rate-limit-retries</code></td><td>AvailabilityRefreshJob.rateLimitBackoff</td></tr>
+      <tr><td>전부 실패 응답</td><td class="num">503 · Retry-After 5</td><td>코드 상수 <code>SearchExceptionHandler.RETRY_AFTER_SECONDS</code></td><td>SearchExceptionHandler.allSuppliersFailed</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 class="sec">용어</h2>
+  <p class="sub">이 문서에서 쓴 말이에요.</p>
+  <dl class="glo">
+    <div class="term"><dt>저하 모드<span class="en">degraded</span></dt><dd>Redis 에 값이 없거나 Redis 가 죽었을 때 검색이 공급사를 직접 부르는 상태예요. 응답의 <code>fresh</code> 가 true 로 나와요.</dd></div>
+    <div class="term"><dt>델타<span class="en">delta</span></dt><dd>크론잡이 공급사 목록과 DB 의 active 집합을 비교해 추가·변경·사라짐만 반영하는 방식이에요. 행은 지우지 않고 <code>active=false</code> 로만 둬요.</dd></div>
+    <div class="term"><dt>상태 키<span class="en">stay:v1:status:{supplier}</span></dt><dd>갱신 잡이 공급사별 마지막 성공·실패 시각과 사유를 적는 Redis Hash 예요. 검색이 읽어 <code>failures</code> 에 드러내요.</dd></div>
+    <div class="term"><dt>묶음<span class="en">chunk</span></dt><dd>재고·요금 API 가 한 번에 받는 숙소 코드 50개 단위예요. 묶음마다 따로 호출하고 실패도 묶음 단위로 가둬요.</dd></div>
+    <div class="term"><dt>미상<span class="en">unknown occupancy</span></dt><dd>공급사가 <code>maxOccupancy</code> 를 주지 않은 객실 타입이에요. 기본값을 넣지 않고 null 로 저장하고, 응답에서는 재고·요금 응답 값 → 매핑 값 순으로 채워요.</dd></div>
+    <div class="term"><dt>표준 형태<span class="en">stay/ package</span></dt><dd>어댑터가 공급사 응답을 바꿔 주는 공통 레코드예요(<code>SupplierHotel</code>, <code>SupplierRoomOffer</code>, <code>SupplierDailyOffer</code>). 어댑터 밖에서는 이것만 봐요.</dd></div>
+  </dl>
+
+  <footer>
+    소스코드 직접 열람으로 확정 (2026-09-17 기준): <code>search/StaySearchService.java</code>, <code>search/StaySearchRequest.java</code>, <code>search/SearchExceptionHandler.java</code>, <code>search/StaySearchController.java</code>, <code>supplier/SupplierFailures.java</code>, <code>supplier/ChunkedFetch.java</code>, <code>supplier/SupplierRateLimiter.java</code>, <code>supplier/SupplierWebClients.java</code>, <code>supplier/SupplierProperties.java</code>, <code>supplier/a/SupplierAClient.java</code>, <code>supplier/b/SupplierBClient.java</code>, <code>mapping/MappingSyncJob.java</code>, <code>mapping/MappingSyncRunner.java</code>, <code>mapping/MappingRegistryLoader.java</code>, <code>mapping/MappingRegistry.java</code>, <code>cache/AvailabilityRefreshJob.java</code>, <code>cache/AvailabilityCache.java</code>, <code>cache/CachedRate.java</code>, <code>config/CacheConfig.java</code>, <code>config/SupplierClientConfig.java</code>, <code>src/main/resources/application.properties</code>.
+    범위 외: Mock Supplier 내부 동작(별도 모듈), K8s CronJob 실제 배포 구성(설계만, <code>docs/architecture.md</code> 6.2), 연동 지표·모니터(설계만, 4.7). 공급사 A·B 는 로컬 Mock 이 대신하며 실제 외부 서비스는 호출하지 않아요.
+  </footer>
+</div>
+
+<script>
+(function(){
+  /* ═══════════════════════════════════════════════════════════════
+     SLOT:DATA — 문서마다 이 블록만 교체한다. 아래 엔진은 수정 금지.
+     스키마는 references/logic-map-mode.md · drawing-rules.md 참고.
+     ═══════════════════════════════════════════════════════════════ */
+  /* D: 노드·엣지 클릭 상세. k=배지종류(boot|req|fb|ext|obs|edge|node)
+     t=제목 en=부제 sum=한줄 pts=[불릿] cd='코드블록' o='포인트' src='SoT 파일경로' lk=[{n,u}] */
+  var D = {
+    b_props:{k:'boot',t:'설정 바인딩 → 공급사별 WebClient',en:'SupplierProperties · SupplierWebClients',
+      sum:'공급사마다 base-url·api-key·타임아웃을 부팅 때 한 번 묶어요. 하나라도 빠지면 그 자리에서 기동이 실패해요.',
+      pts:['<code>supplier.endpoints.{a|b}.base-url / api-key / connect-timeout(1s) / response-timeout(3s)</code>','<code>Supplier.values()</code> 전부를 돌며 WebClient 를 만들어요. 설정이 없으면 <code>IllegalStateException("missing configuration: supplier.endpoints.c")</code>','<code>X-Api-Key</code> 는 defaultHeader 로 붙고, Boot 의 readTimeout 이 reactor-netty 응답 타임아웃으로 적용돼요','요청마다 다시 읽지 않아요. 값을 바꾸려면 재기동이에요'],
+      src:'src/main/java/com/staysupplier/supplier/SupplierWebClients.java:13-30 · SupplierProperties.java:15-22 · config/SupplierClientConfig.java'},
+    b_reg:{k:'boot',t:'인메모리 매핑 동기 로드',en:'MappingRegistryLoader.afterSingletonsInstantiated',
+      sum:'웹 서버가 요청을 받기 전에 MySQL 의 active 매핑을 스냅샷으로 올려요. 검색은 DB 를 읽지 않아요.',
+      pts:['<code>SmartInitializingSingleton</code> 이라 모든 빈이 만들어진 직후, 포트가 열리기 전에 실행돼요','예외는 그대로 던져 기동을 실패시켜요 (빈 매핑으로 뜨지 않아요)','<code>findAllActive</code> 두 번(숙소·객실 타입)으로 공급사별 코드 → 내부 id 맵을 만들어요','<code>@Profile("!sync")</code>: 크론잡 프로세스에서는 돌지 않아요'],
+      src:'src/main/java/com/staysupplier/mapping/MappingRegistryLoader.java:18-41 · MappingRegistry.java:41-60'},
+    b_first:{k:'boot',t:'갱신 잡 첫 바퀴',en:'CacheConfig.RefreshScheduler · initialDelay PT0S',
+      sum:'기동 직후 오늘~+30일 요금·재고를 Redis 에 채우기 시작해요. 첫 바퀴가 끝나기 전 검색은 저하 모드예요.',
+      pts:['<code>@Scheduled(fixedDelayString="${cache.refresh-interval}", initialDelayString="PT0S")</code>','<code>cache.refresh-enabled=false</code> 면 빈 자체가 안 만들어져요 (테스트)','한 바퀴 예외는 error 로그로 삼키고 다음 주기에 다시 해요','readiness 와 연동해 첫 바퀴 전 트래픽을 막는 것은 설계만이에요 (architecture 4.8)'],
+      src:'src/main/java/com/staysupplier/config/CacheConfig.java:41-68'},
+    r_in:{k:'req',t:'GET /api/v1/stays/search',en:'StaySearchController',
+      sum:'검색 조건은 날짜와 인원뿐이에요. 대상은 보유 숙소 전체예요.',
+      pts:['쿼리: <code>checkIn, checkOut, adults, children</code> + 선택 <code>fresh</code>, <code>includeSoldOut</code>','컨트롤러는 요청 객체를 만들어 서비스에 넘기기만 해요','파라미터 누락·형식 오류는 <code>SearchExceptionHandler</code> 가 400 으로 바꿔요'],
+      src:'src/main/java/com/staysupplier/search/StaySearchController.java:18-32'},
+    r_val:{k:'req',t:'요청 검증',en:'StaySearchRequest.validate(maxNights)',
+      sum:'공급사를 부르기 전에 끝나는 첫 게이트예요. 실패하면 외부 호출 없이 400 이에요.',
+      pts:['<code>checkOut</code> 이 <code>checkIn</code> 뒤여야 해요','숙박일 ≤ <code>search.max-nights</code>(30)','<code>adults ≥ 1</code>, <code>children ≥ 0</code>','실패는 <code>InvalidSearchRequestException</code> → 400 <code>INVALID_REQUEST</code>'],
+      src:'src/main/java/com/staysupplier/search/StaySearchRequest.java:25-40 · StaySearchService.java:69'},
+    r_cache:{k:'req',t:'Redis 우선 읽기',en:'StaySearchService.readCache',
+      sum:'평소 검색은 여기서 끝나요. 값이 있는 숙소는 공급사를 부르지 않아요.',
+      pts:['모든 active 숙소 id 를 <code>missing</code> 에 넣고 시작해요. <code>fresh=true</code> 면 읽기를 건너뛰어요','읽는 필드 = 숙소 × 객실 타입 × 숙박일 (<code>{roomTypeId}:{yyyyMMdd}</code>), HMGET 파이프라인 한 번','기간 안 하루라도 필드가 없으면 그 객실 타입만 건너뛰고 숙소는 캐시로 응답해요','상태 키가 실패면 <code>failures</code> 에 그 공급사를 미리 넣어요','Redis 예외는 warn 로그 후 0건으로 돌려 저하 모드로 넘겨요'],
+      src:'src/main/java/com/staysupplier/search/StaySearchService.java:74-82, 131-190'},
+    r_gate:{k:'req',t:'값 없는 숙소 있나?',en:'missing 집합',
+      sum:'캐시에서 못 채운 숙소만 다음 단계로 가요. 비어 있으면 fan-out 자체를 건너뛰어요.',
+      pts:['<code>missing.isEmpty() ? List.of() : Flux…block()</code>','비는 경우: 첫 바퀴 전, 창(오늘~+30일) 밖 날짜, Redis 장애·초기화, <code>fresh=true</code>','캐시로 채운 숙소 수 <code>servedFromCache</code> 는 응답의 <code>fresh</code> 판정에 써요 (0 이면 true)'],
+      src:'src/main/java/com/staysupplier/search/StaySearchService.java:84-88, 124'},
+    r_fan:{k:'req',t:'공급사 fan-out',en:'Flux.flatMap · retryWhen',
+      sum:'공급사 수만큼 병렬로 부르고, 실패는 공급사 단위로 가둬요. 스레드는 요청 스레드 하나가 끝에서 block() 해요.',
+      pts:['공급사별로 <code>missing</code> 에 든 자기 숙소 코드만 골라 <code>AvailabilityQuery</code> 를 만들어요. 없으면 skipped','재시도: <code>CONNECTION · UNAVAILABLE · SUPPLIER_ERROR</code> 만 200ms 뒤 1회 (<code>search.retry-attempts=1</code>)','TIMEOUT 은 재시도하지 않아요. 3초를 두 번 쓰지 않기 위해서예요','<code>onErrorResume(SupplierCallException)</code> 으로 실패를 <code>SupplierOutcome.failure</code> 값으로 바꿔요'],
+      src:'src/main/java/com/staysupplier/search/StaySearchService.java:48-50, 85-88, 192-218'},
+    r_adapter:{k:'req',t:'어댑터 A·B · 50개 묶음',en:'SupplierAClient · SupplierBClient · ChunkedFetch',
+      sum:'공급사 전용 형식은 이 안에서만 살아요. 밖으로는 표준 형태와 FailureReason 만 나가요.',
+      pts:['<code>MAX_HOTEL_CODES_PER_REQUEST=50</code> 으로 잘라 묶음마다 병렬 호출해요','호출 전 <code>SupplierRateLimiter.throttle</code> 로 공급사당 초당 4회 간격을 둬요','A: <code>/a/v1/availability</code>, 총액 = Σ(nightlyRate + taxAmount) · B: <code>/b/api/search</code>, totalPrice 그대로','묶음 일부 실패는 <code>failures</code> 로, 전부 실패면 첫 예외를 던져요'],
+      src:'src/main/java/com/staysupplier/supplier/ChunkedFetch.java:29-76 · a/SupplierAClient.java:85-99 · b/SupplierBClient.java:106'},
+    r_map:{k:'req',t:'표준 형태 → 내부 식별자',en:'StaySearchService.toRoomType',
+      sum:'공급사 코드를 내부 id 로 바꾸고, 응답에 못 실을 항목을 여기서 걸러요. 캐시 값도 같은 함수를 지나요.',
+      pts:['매핑에 없는 코드(지난 새벽 이후 추가된 상품)는 warn 로그 후 버려요','최대 인원: 응답 값 → 매핑 값 순. 둘 다 없으면 추측하지 않고 빼요','<code>maxOccupancy &lt; adults+children</code> 이면 제외','<code>availableRooms == 0</code> 은 기본 제외, <code>includeSoldOut=true</code> 면 포함'],
+      src:'src/main/java/com/staysupplier/search/StaySearchService.java:223-251'},
+    r_merge:{k:'req',t:'숙소 단위 병합 · 응답 확정',en:'StaySearchService.search',
+      sum:'캐시 값과 직접 호출 값을 숙소별로 합치고, 실패는 지우지 않고 failures 에 남겨요.',
+      pts:['공급사 전체 실패 → <code>SupplierFailure(supplier, reason, hotelCount)</code>, 묶음 실패 → 실패한 묶음의 숙소 수','<code>called &gt; 0 &amp;&amp; failedEntirely == called &amp;&amp; servedFromCache == 0</code> 일 때만 <code>AllSuppliersFailedException</code>','숙소는 id 순, 객실 타입은 roomTypeId 순으로 정렬','응답의 <code>fresh = servedFromCache == 0</code>'],
+      src:'src/main/java/com/staysupplier/search/StaySearchService.java:90-125'},
+    r_out:{k:'req',t:'응답 200 / 400 / 503',en:'SearchExceptionHandler',
+      sum:'부분 실패는 200 안의 failures 로, 전부 실패만 503 이에요. 206·207 은 쓰지 않아요.',
+      pts:['400 <code>INVALID_REQUEST</code>: 검증 실패, 파라미터 누락, 형식 오류','503 <code>ALL_SUPPLIERS_FAILED</code> + <code>Retry-After: 5</code>, 본문에 failures 포함','200: <code>{checkIn, checkOut, nights, adults, children, stays[], failures[], fresh}</code>'],
+      src:'src/main/java/com/staysupplier/search/SearchExceptionHandler.java:25-41'},
+    j_cron:{k:'boot',t:'크론잡 (sync 프로필, 매일 04:00)',en:'MappingSyncJob.run · MappingSyncRunner',
+      sum:'웹 서버 없이 뜨는 별도 프로세스예요. 공급사 목록을 받아 매핑을 갱신하고 종료 코드로 결과를 알려요.',
+      pts:['<code>spring.profiles.active=sync</code> → <code>web-application-type=none</code>, <code>ApplicationRunner</code> 한 번 실행','공급사별 <code>fetchHotels()</code> 를 병렬로. 재시도 고정 30초 × 3회 (<code>CONNECTION · TIMEOUT · SUPPLIER_ERROR · UNAVAILABLE · RATE_LIMITED</code>)','하나라도 실패하면 종료 코드 1 → K8s backoffLimit 만큼 재실행 (upsert 라 재실행 안전)','K8s CronJob 04:00 Asia/Seoul 은 설계(architecture 6.2). 로컬은 <code>./gradlew :bootRun --args=\'--spring.profiles.active=sync\'</code>'],
+      src:'src/main/java/com/staysupplier/mapping/MappingSyncJob.java:38-100 · MappingSyncRunner.java:15-39 · StaySupplierIntegrationApplication.java:13-18'},
+    j_delta:{k:'boot',t:'델타 반영',en:'MappingSyncJob.applyDelta',
+      sum:'이번 목록과 DB 의 active 집합을 비교해 추가·변경·사라짐만 반영해요. 행은 지우지 않아요.',
+      pts:['공급사 하나가 실패하면 그 공급사만 건너뛰고 기존 매핑을 유지해요','추가·변경 = upsert(<code>ON DUPLICATE KEY UPDATE</code>, 같은 코드는 같은 id), 사라짐 = <code>active=false</code>','사라짐이 active 의 <code>mapping.sync.max-disappear-ratio</code>(0.5) 를 넘으면 공급사 장애로 보고 비활성화만 보류 + error 로그','공급사 하나의 델타는 <code>TransactionTemplate</code> 하나 안에서 반영해요'],
+      src:'src/main/java/com/staysupplier/mapping/MappingSyncJob.java:106-170'},
+    j_reload:{k:'boot',t:'04:30 인메모리 리로드',en:'MappingRegistryLoader.reloadDaily',
+      sum:'크론잡이 바꾼 매핑을 웹 앱이 하루 한 번 다시 읽어요. 실패하면 옛 스냅샷을 그대로 써요.',
+      pts:['<code>mapping.reload.cron=0 30 4 * * *</code>, <code>zone=Asia/Seoul</code>','실패 시 error 로그(loadedAt 포함) 후 <code>mapping.reload.retry-delay</code>(5m) 뒤 1회 더','수동으로 크론잡을 즉시 돌린 경우 04:30 이나 재기동 전까지 옛 매핑을 써요'],
+      src:'src/main/java/com/staysupplier/mapping/MappingRegistryLoader.java:43-60'},
+    j_refresh:{k:'boot',t:'갱신 잡 (5분마다)',en:'AvailabilityRefreshJob.refresh',
+      sum:'인메모리 매핑의 숙소를 공급사별로 넘겨 오늘~+30일 날짜별 값을 받아요. 캐시를 쓰는 곳은 여기뿐이에요.',
+      pts:['창: <code>LocalDate.now(clock)</code> ~ <code>+cache.window-days</code>(30)','A 는 30일 범위 한 번, B 는 기간 총액만 주므로 날짜마다 1박씩 호출 (<code>fetchDailyAvailability</code>)','429 만 지수 백오프 1→2→4… 초, 60초 상한, 최대 5회. 다른 실패는 다음 주기','실패 공급사는 error 로그 + 상태 키에 사유. 값은 TTL 까지 유지'],
+      src:'src/main/java/com/staysupplier/cache/AvailabilityRefreshJob.java:56-115'},
+    j_store:{k:'boot',t:'Hash 통째 교체 + 상태 키',en:'AvailabilityCache.write · recordStatus',
+      sum:'숙소당 Hash 하나를 MULTI 로 지우고 다시 써요. 덧쓰기만 하면 지난 날짜 필드가 영원히 남기 때문이에요.',
+      pts:['<code>MULTI: DEL → HSET → EXPIRE(주기 × 3 = 900s)</code>','필드 <code>{roomTypeId}:{yyyyMMdd}</code>, 값 <code>재고|세금 포함 1박|통화|조식(0/1)|최대 인원</code> (약 25B, listpack)','<code>_refreshedAt</code> 필드에 마지막 채운 시각','상태 키 <code>stay:v1:status:{supplier}</code>: <code>lastSuccessAt</code> 또는 <code>lastFailureAt + lastFailureReason</code>','매핑에 없는 코드는 warn 로그 후 버려요'],
+      src:'src/main/java/com/staysupplier/cache/AvailabilityCache.java:53-72, 109-118 · CachedRate.java:10-13 · AvailabilityRefreshJob.java:118-135'},
+    f_net:{k:'fb',t:'전송 오류 → TIMEOUT · CONNECTION · INVALID_RESPONSE',en:'SupplierFailures.classify',
+      sum:'WebClient 체인에서 올라온 어떤 예외든 통일한 예외 하나로 바꿔요. 공급사와 무관한 규칙이에요.',
+      pts:['<code>TimeoutException · ReadTimeoutException</code> (원인 체인 포함) → <code>TIMEOUT</code>','<code>WebClientRequestException</code> (연결 거부·1초 초과·DNS) → <code>CONNECTION</code>','<code>CodecException</code> 과 그 밖의 예외 → <code>INVALID_RESPONSE</code>','이미 <code>SupplierCallException</code> 이면 그대로 통과'],
+      src:'src/main/java/com/staysupplier/supplier/SupplierFailures.java:24-38'},
+    f_a:{k:'fb',t:'A: HTTP 상태 → FailureReason',en:'SupplierFailures.fromStatus',
+      sum:'A 는 실패를 HTTP 상태로 알려요. 본문의 원본 코드와 Retry-After 는 예외에 실어 로그로만 남겨요.',
+      pts:['<code>400 → INVALID_REQUEST · 401 → UNAUTHORIZED · 429 → RATE_LIMITED · 503 → UNAVAILABLE</code>','그 밖의 4xx → <code>INVALID_REQUEST</code>, 5xx → <code>SUPPLIER_ERROR</code>','<code>Retry-After</code> 가 초 단위 숫자면 예외에 담아요. 대기에 쓰는 것은 확장 항목이에요','<code>onStatus(isError, toFailure)</code> 에서 본문 <code>{error, message}</code> 를 읽어 원본 코드로 보관'],
+      src:'src/main/java/com/staysupplier/supplier/SupplierFailures.java:44-70 · a/SupplierAClient.java:131-142'},
+    f_b:{k:'fb',t:'B: resultCode → FailureReason',en:'SupplierBClient.reasonOf · requireSuccess',
+      sum:'B 는 장애여도 HTTP 200 을 줘요. 본문 resultCode 를 읽지 않으면 장애를 정상으로 처리하게 돼요.',
+      pts:['<code>E400 → INVALID_REQUEST · E401 → UNAUTHORIZED · E429 → RATE_LIMITED · E500 → SUPPLIER_ERROR · E503 → UNAVAILABLE</code>','모르는 코드는 스펙 밖이라 <code>INVALID_RESPONSE</code>','<code>resultCode</code> 없음, 성공(0000)인데 <code>data</code> 없음 → <code>INVALID_RESPONSE</code>','0건은 <code>items: []</code> 로 와요. 구조 누락과 구분해요'],
+      src:'src/main/java/com/staysupplier/supplier/b/SupplierBClient.java:188-200, 239-248 · b/SupplierBResponses.java:11'},
+    f_chunk:{k:'fb',t:'묶음 부분 실패',en:'ChunkedFetch.assemble',
+      sum:'50개 묶음 중 일부가 실패해도 성공한 묶음은 살려요. 전부 실패해야 공급사 실패예요.',
+      pts:['묶음마다 <code>onErrorResume(SupplierCallException)</code> 으로 <code>ChunkOutcome(chunk, [], ex)</code> 를 만들어요','성공 항목은 합치고 실패 묶음은 <code>ChunkFailure(supplier, hotelCodes, reason)</code> 로 모아요','<code>failures.size() == chunkCount</code> 면 첫 예외를 던져요','검색은 묶음 실패를 <code>failures</code> 에 숙소 수와 함께 적고, 갱신 잡은 error 로그만 남겨요'],
+      src:'src/main/java/com/staysupplier/supplier/ChunkedFetch.java:41-76'},
+    f_degrade:{k:'fb',t:'저하 모드',en:'Redis 장애 · 키 없음 → 직접 호출',
+      sum:'Redis 가 없어도 검색은 살아 있어요. 값이 없는 숙소만 공급사를 직접 불러 응답해요.',
+      pts:['<code>readCache</code> 의 RuntimeException → warn 로그, 0건 반환 → 전부 <code>missing</code>','키 없음(첫 바퀴 전·FLUSHALL·창 밖 날짜)도 같은 경로예요','응답의 <code>fresh: true</code> 로 드러나요','갱신 잡의 Redis 쓰기 실패는 error 로그 후 다음 주기에 다시 해요'],
+      src:'src/main/java/com/staysupplier/search/StaySearchService.java:151-154, 167-179 · cache/AvailabilityRefreshJob.java:84-87'},
+    x_sup:{k:'ext',t:'Supplier A · B',en:'로컬 Mock Supplier (:9090)',
+      sum:'실제 외부 서비스는 호출하지 않아요. 부록 스펙대로 만든 Mock 이 정상·장애·무응답을 재현해요.',
+      pts:['A: <code>GET /a/v1/hotels</code>, <code>GET /a/v1/availability?hotelCodes=…&amp;checkIn&amp;checkOut&amp;adults&amp;children</code>','B: <code>GET /b/api/properties</code>, <code>GET /b/api/search</code> (응답은 항상 200 + <code>resultCode</code>)','모드 전환: <code>POST /control/{a|b}/mode?value={normal|error|no-response}</code>','호출 예산: 공급사당 초당 4회 시작, 429 를 받으면 절반(하한 0.5)'],
+      src:'mock-supplier/.../MockSupplierController.java:55-86 · src/main/java/com/staysupplier/supplier/SupplierRateLimiter.java:21-65'},
+    x_redis:{k:'ext',t:'Redis · 요금·재고 캐시',en:'redis:7.4 · StringRedisTemplate',
+      sum:'요금·재고의 유일한 저장 위치예요. 원본은 공급사고 DB 에는 넣지 않아요.',
+      pts:['키 <code>stay:v1:{hotelId}</code> (Hash), TTL 900s','상태 키 <code>stay:v1:status:{supplier}</code> (Hash)','읽기: 검색의 HMGET 파이프라인. 쓰기: 갱신 잡의 MULTI 뿐','없으면 앱은 뜨고 검색은 저하 모드'],
+      src:'src/main/java/com/staysupplier/cache/AvailabilityCache.java:23-32 · src/main/resources/application.properties:43-51'},
+    x_mysql:{k:'ext',t:'MySQL · 매핑만 저장',en:'mysql:8.4 · MyBatis XML',
+      sum:'공급사 코드 ↔ 내부 식별자 배정 장부예요. 요금·재고는 없어요.',
+      pts:['<code>hotel_mapping (supplier, supplier_hotel_code)</code> 유니크, <code>room_type_mapping (hotel_id, supplier_room_type_code)</code> 유니크','BIGINT 자동 증가 id + upsert 라 같은 코드는 항상 같은 id','삭제 없음. <code>active</code> 로만 관리','쓰는 곳: 크론잡. 읽는 곳: 웹 앱 기동·04:30 리로드'],
+      src:'src/main/resources/mapper/HotelMappingMapper.xml · RoomTypeMappingMapper.xml · schema.sql'},
+    o_log:{k:'obs',t:'warn/error 로그 + 상태 키',en:'지표·모니터는 설계만',
+      sum:'코드에 지표는 없어요. 외부 호출·DB·Redis 실패는 공급사·원인·원본 코드를 로그로 남기고, 갱신 잡은 상태 키에도 적어요.',
+      pts:['검색: <code>search supplier=A failed reason=… hotels=n</code> (warn), 전부 실패 (error)','크론잡: <code>mapping sync skipped supplier=… reason=…</code>, 보류 (error)','갱신 잡: <code>cache refresh supplier=… failed reason=… (values kept until TTL)</code> (error)','Datadog 로그 모니터·알림 규칙·지표 정의는 <code>docs/architecture.md</code> 4.7 에 설계로만 있어요'],
+      src:'src/main/java/com/staysupplier/cache/AvailabilityRefreshJob.java:70-87 · search/StaySearchService.java:208 · mapping/MappingSyncJob.java:77-79'},
+    e_boot1:{k:'edge',t:'설정 → 매핑 로드',en:'빈 생성 순서',sum:'설정 바인딩과 WebClient 생성이 끝난 뒤 모든 싱글턴이 만들어지고 나서 매핑을 읽어요.',src:'config/SupplierClientConfig.java · mapping/MappingRegistryLoader.java:38-41'},
+    e_boot2:{k:'edge',t:'매핑 로드 → 갱신 잡 첫 바퀴',en:'스케줄러 initialDelay 0',sum:'인메모리 매핑이 있어야 갱신 잡이 공급사별 숙소 코드를 꺼낼 수 있어요.',src:'config/CacheConfig.java:58-66'},
+    e_in:{k:'edge',t:'컨트롤러 → 검증',en:'StaySearchRequest',sum:'컨트롤러는 요청 객체만 만들고 검증은 서비스 첫 줄에서 해요.',src:'search/StaySearchService.java:69'},
+    e_val:{k:'edge',t:'검증 통과 → Redis 읽기',en:'fresh=false 일 때',sum:'검증을 통과한 요청만 Redis 를 읽어요.',src:'search/StaySearchService.java:80-82'},
+    e_cache_gate:{k:'edge',t:'캐시 결과 → 게이트',en:'missing 갱신',sum:'값이 있는 숙소는 missing 에서 빠져요.',src:'search/StaySearchService.java:186-187'},
+    e_gate_fan:{k:'edge',t:'값 없는 숙소 → fan-out',en:'missing 비어 있지 않을 때',sum:'missing 이 비어 있으면 이 선은 켜지지 않아요.',src:'search/StaySearchService.java:85'},
+    e_gate_merge:{k:'edge',t:'캐시 값 → 병합',en:'점선 = 공급사 호출 없음',sum:'Redis 적중 숙소는 toRoomType 을 거쳐 바로 병합 대상이 돼요.',src:'search/StaySearchService.java:180-185'},
+    e_fan_adapter:{k:'edge',t:'fan-out → 어댑터',en:'fetchAvailability(query)',sum:'공급사별 코드 목록과 날짜·인원을 담은 AvailabilityQuery 로 어댑터를 불러요.',src:'search/StaySearchService.java:202-204'},
+    e_adapter_sup:{k:'edge',t:'어댑터 → 공급사',en:'WebClient · X-Api-Key · 연결 1s · 응답 3s',sum:'유일하게 외부로 나가는 HTTP 호출이에요. 묶음마다 한 번씩이에요.',src:'supplier/SupplierWebClients.java:13-30 · a/SupplierAClient.java:85-99'},
+    e_adapter_map:{k:'edge',t:'어댑터 → 변환',en:'SupplierFetchResult(offers, failures)',sum:'표준 형태 목록과 묶음 실패 목록이 함께 돌아와요.',src:'search/StaySearchService.java:103-110'},
+    e_map_merge:{k:'edge',t:'변환 → 병합',en:'roomTypesByHotel',sum:'내부 id 기준으로 숙소별 목록에 쌓여요.',src:'search/StaySearchService.java:106-110'},
+    e_merge_out:{k:'edge',t:'병합 → 응답',en:'200 또는 503',sum:'전부 실패면 예외가 핸들러로 가고, 아니면 200 이에요.',src:'search/StaySearchService.java:112-125'},
+    e_val_out:{k:'edge',t:'검증 실패 → 400',en:'InvalidSearchRequestException',sum:'공급사를 부르지 않고 바로 400 이에요.',src:'search/SearchExceptionHandler.java:27-33'},
+    e_cache_redis:{k:'edge',t:'검색 → Redis',en:'HMGET 파이프라인',sum:'숙소마다 HMGET 하나를 파이프라인으로 묶어 한 번에 보내요. 키가 없는 숙소는 결과에 없어요.',src:'cache/AvailabilityCache.java:78-100'},
+    e_cron_adapter:{k:'edge',t:'크론잡 → 어댑터',en:'fetchHotels()',sum:'숙소 목록 API 예요. 재고·요금 모드의 영향을 받지 않아요.',src:'mapping/MappingSyncJob.java:64-71'},
+    e_refresh_adapter:{k:'edge',t:'갱신 잡 → 어댑터',en:'fetchDailyAvailability(codes, from, to)',sum:'50개 묶음 · 초당 4회 예산 · 429 지수 백오프로 30일치를 받아요.',src:'cache/AvailabilityRefreshJob.java:91-101'},
+    e_cron_delta:{k:'edge',t:'목록 → 델타',en:'성공한 공급사만',sum:'실패한 공급사는 델타 없이 건너뛰어요.',src:'mapping/MappingSyncJob.java:73-91'},
+    e_refresh_store:{k:'edge',t:'갱신 결과 → 저장',en:'공급사 코드 → 내부 id',sum:'인메모리 매핑으로 id 를 붙여 숙소별 Hash 로 만들어요.',src:'cache/AvailabilityRefreshJob.java:118-135'},
+    e_store_redis:{k:'edge',t:'저장 → Redis',en:'MULTI DEL → HSET → EXPIRE',sum:'Hash 통째 교체와 상태 키 기록이에요.',src:'cache/AvailabilityCache.java:53-72, 109-118'},
+    e_delta_db:{k:'edge',t:'델타 → MySQL',en:'upsert · deactivate',sum:'공급사 하나의 델타를 트랜잭션 하나로 반영해요.',src:'mapping/MappingSyncJob.java:82-83, 119-144'},
+    e_db_reload:{k:'edge',t:'MySQL → 인메모리',en:'findAllActive × 2',sum:'기동 시와 04:30 에 같은 reload() 가 스냅샷을 교체해요.',src:'mapping/MappingRegistry.java:41-60'}
+  };
+  /* 노드 클릭 시 함께 하이라이트할 엣지들 */
+  var NODE_EDGES = {
+    b_props:['e_boot1'], b_reg:['e_boot1','e_boot2','e_db_reload'], b_first:['e_boot2','e_refresh_adapter'],
+    r_in:['e_in'], r_val:['e_in','e_val','e_val_out'], r_cache:['e_val','e_cache_redis','e_cache_gate'],
+    r_gate:['e_cache_gate','e_gate_fan','e_gate_merge'], r_fan:['e_gate_fan','e_fan_adapter'],
+    r_adapter:['e_fan_adapter','e_adapter_sup','e_adapter_map','e_cron_adapter','e_refresh_adapter'],
+    r_map:['e_adapter_map','e_map_merge'], r_merge:['e_map_merge','e_gate_merge','e_merge_out'], r_out:['e_merge_out','e_val_out'],
+    j_cron:['e_cron_adapter','e_cron_delta'], j_delta:['e_cron_delta','e_delta_db'], j_reload:['e_db_reload'],
+    j_refresh:['e_refresh_adapter','e_refresh_store'], j_store:['e_refresh_store','e_store_redis'],
+    f_net:['e_adapter_sup'], f_a:['e_adapter_sup'], f_b:['e_adapter_sup'], f_chunk:['e_adapter_map'], f_degrade:['e_cache_redis','e_gate_fan'],
+    x_sup:['e_adapter_sup'], x_redis:['e_cache_redis','e_store_redis'], x_mysql:['e_delta_db','e_db_reload'], o_log:[]
+  };
+  /* 시나리오(경로 일괄 조명): ids=켤 노드·엣지 data-k 목록 */
+  var SCEN = {
+    s_err:{title:'① 에러 계약', kind:'분류',
+      sum:'실패는 세 층에서 잡혀요. 요청 검증(400), 공급사 호출(failures), 전부 실패(503). 부분 실패는 절대 오류 상태 코드가 아니에요.',
+      ids:['r_val','e_val_out','r_out','r_adapter','e_adapter_sup','x_sup','f_net','f_a','f_b','f_chunk','r_merge','e_merge_out'],
+      steps:['<b>400</b> — <code>validate</code> 실패(날짜 순서·30박 초과·adults 0)와 파라미터 누락·형식 오류. 공급사를 부르지 않아요.','<b>판정 통일</b> — A 의 HTTP 상태, B 의 <code>resultCode</code>, 전송 오류가 모두 <code>FailureReason</code> 8가지 중 하나가 돼요. 원본 코드는 예외와 로그에만 남아요.','<b>200 + failures</b> — 공급사 하나가 죽어도 나머지 결과로 응답해요. <code>failures[{supplier, reason, affectedHotels}]</code> 에 사실만 적어요. 묶음 일부 실패도 여기예요.','<b>503 + Retry-After 5</b> — 직접 부른 공급사가 전부 실패하고 캐시로 채운 숙소도 0개일 때만이에요. 빈 200 은 "예약 가능한 숙소가 없다" 로 오해되기 때문이에요.']},
+    s_retry:{title:'② 재시도 정책 3종', kind:'분류',
+      sum:'같은 실패라도 기다릴 수 있는 시간이 달라요. 새벽 배치는 넉넉히, 사용자 요청은 순간 장애만, 갱신 잡은 429 만.',
+      ids:['j_cron','e_cron_adapter','r_fan','e_gate_fan','e_fan_adapter','j_refresh','e_refresh_adapter','r_adapter','e_adapter_sup','x_sup'],
+      steps:['<b>크론잡</b> — <code>CONNECTION · TIMEOUT · SUPPLIER_ERROR · UNAVAILABLE · RATE_LIMITED</code> 를 고정 30초 간격 3회. 그래도 실패면 그 공급사만 건너뛰고 종료 코드 1.','<b>검색</b> — <code>CONNECTION · UNAVAILABLE · SUPPLIER_ERROR</code> 만 200ms 뒤 1회. TIMEOUT 은 3초를 두 번 쓰게 되어 재시도하지 않아요.','<b>갱신 잡</b> — <code>RATE_LIMITED</code> 만 지수 백오프 1→2→4… 초(60초 상한, 5회). 예산은 429 마다 절반. 다른 실패는 다음 주기(5분)에 맡겨요.','<b>공통</b> — <code>INVALID_REQUEST · UNAUTHORIZED · INVALID_RESPONSE</code> 는 다시 해도 같으니 어디서도 재시도하지 않아요.']},
+    s_cache:{title:'③ 캐시 상태', kind:'상태',
+      sum:'검색은 Redis 를 먼저 읽고, 값이 없는 숙소만 공급사를 불러요. 캐시를 채우는 것은 갱신 잡뿐이에요.',
+      ids:['r_cache','e_cache_redis','x_redis','r_gate','e_gate_merge','e_gate_fan','r_fan','f_degrade','j_refresh','e_refresh_store','j_store','e_store_redis','b_first'],
+      steps:['<b>적중</b> — 숙소 × 객실 타입 × 숙박일 필드가 전부 있으면 공급사 호출 0회, 수 ms. 응답 <code>fresh: false</code>.','<b>저하 모드</b> — 키 없음(첫 바퀴 전 · FLUSHALL · 창 밖 날짜) 또는 Redis 예외 → 그 숙소만(예외면 전부) 직접 호출. <code>fresh: true</code>.','<b>fresh=true</b> — 예약 직전 재확인용. Redis 를 읽지 않고 전부 직접 호출해요.','<b>채우기</b> — 갱신 잡이 5분마다 오늘~+30일을 Hash 통째 교체(TTL 900s). 실패 공급사는 상태 키에 기록되고 검색 응답의 <code>failures</code> 에 붙어요. 값은 TTL 까지 유지돼요.']}
+  };
+  /* 스토리(단계 재생): 각 step = {ids(지도 조명), sq(시퀀스 뷰 표현), t, sum, pts, n?, lk?, done?}
+     sq: {k:'msg',f:'레인',t:'레인',l:'라벨'} | {k:'self',ln:'레인',l:'라벨'} | {k:'burst',...} */
+  var STORY = {
+    req:{title:'검색 요청의 왕복', next:{key:'boot', label:'부팅과 배치'}, steps:[
+      {ids:['r_in'], sq:{k:'msg',f:'cl',t:'ctl',l:'GET /api/v1/stays/search?checkIn&checkOut&adults&children'}, t:'요청이 들어와요',
+       sum:'검색 조건은 날짜와 인원뿐이에요. 어떤 숙소를 물어볼지는 우리가 이미 알고 있어요(인메모리 매핑).', pts:['선택 파라미터 <code>fresh</code>(기본 false), <code>includeSoldOut</code>(기본 false)']},
+      {ids:['r_in','e_in','r_val'], sq:{k:'self',ln:'ctl',l:'validate: 날짜 순서 · ≤30박 · adults ≥ 1'}, t:'검증',
+       sum:'실패하면 공급사를 부르지 않고 400 이에요.', pts:['<code>search.max-nights=30</code>','파라미터 누락·형식 오류도 같은 400 <code>INVALID_REQUEST</code>']},
+      {ids:['r_val','e_val','r_cache','e_cache_redis','x_redis'], sq:{k:'msg',f:'svc',t:'redis',l:'HMGET stay:v1:{hotelId} × 객실타입:날짜 (파이프라인)'}, t:'Redis 를 먼저 읽어요',
+       sum:'평소 검색은 여기서 끝나요. 모든 active 숙소를 대상으로 필드를 한 번에 읽어요.', pts:['상태 키가 실패면 그 공급사를 <code>failures</code> 에 미리 넣어요','Redis 예외는 warn 로그 후 저하 모드']},
+      {ids:['r_cache','e_cache_gate','r_gate'], sq:{k:'self',ln:'svc',l:'값 있는 숙소는 조립 · 없는 숙소만 missing'}, t:'값 없는 숙소만 남겨요',
+       sum:'기간 안 하루라도 필드가 없는 객실 타입은 이번 응답에서 빼고, 숙소 단위로 캐시 적중을 판단해요.', pts:['<code>fresh=true</code> 면 읽기를 건너뛰어 전부 missing','missing 이 비어 있으면 fan-out 을 건너뛰어요']},
+      {ids:['r_gate','e_gate_fan','r_fan'], sq:{k:'self',ln:'svc',l:'Flux.flatMap — 공급사별 병렬, 실패는 공급사 단위로'}, t:'공급사 fan-out',
+       sum:'공급사별로 자기 숙소 코드만 골라 AvailabilityQuery 를 만들고 병렬로 불러요.', pts:['재시도: CONNECTION · UNAVAILABLE · SUPPLIER_ERROR 만 200ms 뒤 1회','끝에서 한 번 <code>block()</code>. 가상 스레드는 켜지 않아요']},
+      {ids:['r_fan','e_fan_adapter','r_adapter','e_adapter_sup','x_sup'], sq:{k:'burst',f:'ad',t:'sup',l:'50개 묶음 병렬 · X-Api-Key · 연결 1s / 응답 3s'}, t:'어댑터가 공급사를 불러요',
+       sum:'묶음마다 한 번씩 HTTP 를 보내요. 호출 전 공급사당 초당 4회 예산을 지켜요.', pts:['A <code>/a/v1/availability</code>, B <code>/b/api/search</code>','전체 지연은 가장 느린 공급사로 정해지고 3초에 끊어요']},
+      {ids:['r_adapter','f_net','f_a','f_b','f_chunk'], sq:{k:'self',ln:'ad',l:'실패 판정 통일 → FailureReason · 묶음 부분 실패 격리'}, t:'실패를 하나의 언어로',
+       sum:'A 의 HTTP 상태, B 의 resultCode, 전송 오류가 모두 FailureReason 8가지가 돼요. 묶음 일부 실패는 성공 묶음을 살려요.', pts:['B 는 장애여도 HTTP 200 이라 <code>resultCode</code> 를 반드시 읽어요','전부 실패한 묶음만 공급사 실패로 올라가요']},
+      {ids:['r_adapter','e_adapter_map','r_map'], sq:{k:'msg',f:'ad',t:'svc',l:'SupplierFetchResult(offers, failures) → toRoomType'}, t:'표준 형태 → 내부 식별자',
+       sum:'공급사 코드를 내부 id 로 바꾸고 인원·매진 필터를 적용해요. 캐시 값도 같은 함수를 지나요.', pts:['최대 인원: 응답 값 → 매핑 값. 둘 다 없으면 빼요','<code>availableRooms == 0</code> 은 기본 제외, <code>includeSoldOut=true</code> 면 포함']},
+      {ids:['r_map','e_map_merge','e_gate_merge','r_merge'], sq:{k:'self',ln:'svc',l:'숙소 단위 병합 · failures 수집 · 전부 실패면 503'}, t:'병합하고 확정해요',
+       sum:'캐시 값과 직접 호출 값을 숙소별로 합쳐요. 실패는 지우지 않고 failures 에 남겨요.', pts:['<code>fresh = servedFromCache == 0</code>','직접 부른 공급사가 전부 실패하고 캐시 0건일 때만 <code>AllSuppliersFailedException</code>']},
+      {ids:['r_merge','e_merge_out','r_out'], sq:{k:'msg',f:'ctl',t:'cl',l:'200 stays + failures / 503 Retry-After: 5'}, done:true, t:'응답 ✓',
+       sum:'부분 실패는 200 안의 failures 로 드러나요. 전부 실패만 503 이에요.', pts:['<code>{checkIn, checkOut, nights, adults, children, stays[], failures[], fresh}</code>']}
+    ]},
+    boot:{title:'부팅과 배치', next:{key:'req', label:'검색 요청의 왕복'}, steps:[
+      {ids:['j_cron','e_cron_adapter','r_adapter','e_adapter_sup','x_sup'], sq:{k:'burst',f:'ad',t:'sup',l:'fetchHotels — A·B 병렬 · 고정 30s × 3 재시도'}, t:'크론잡이 숙소 목록을 받아요 (04:00)',
+       sum:'sync 프로필의 별도 프로세스예요. 웹 서버 없이 뜨고 한 번 돌고 종료해요.', pts:['A <code>/a/v1/hotels</code>, B <code>/b/api/properties</code>','공급사 하나가 실패하면 그 공급사만 건너뛰어요']},
+      {ids:['j_cron','e_cron_delta','j_delta'], sq:{k:'self',ln:'svc',l:'델타: 추가·변경·사라짐(active=false) · 절반 초과면 보류'}, t:'델타를 계산해요',
+       sum:'이번 목록과 DB 의 active 집합을 비교해요. 사라짐이 절반을 넘으면 공급사 장애로 보고 비활성화만 보류해요.', pts:['<code>mapping.sync.max-disappear-ratio=0.5</code>']},
+      {ids:['j_delta','e_delta_db','x_mysql'], sq:{k:'msg',f:'svc',t:'db',l:'upsert ON DUPLICATE KEY · deactivate (트랜잭션 1개)'}, t:'MySQL 에 반영해요',
+       sum:'같은 코드는 항상 같은 id 를 받아요. 행은 지우지 않아요.', pts:['종료 코드 0(전부 성공) / 1(하나라도 실패) → K8s 가 재실행']},
+      {ids:['b_props','e_boot1','b_reg','e_db_reload','x_mysql'], sq:{k:'msg',f:'svc',t:'db',l:'웹 앱 기동: findAllActive × 2 → 인메모리 스냅샷'}, t:'웹 앱이 뜨면서 매핑을 올려요',
+       sum:'설정 바인딩 → WebClient 생성 → 매핑 동기 로드 순서예요. 매핑 로드가 실패하면 기동이 실패해요.', pts:['설정이 빠진 공급사가 있어도 기동 실패','검색은 이 스냅샷만 보고 DB 를 읽지 않아요']},
+      {ids:['j_reload','e_db_reload','x_mysql'], sq:{k:'msg',f:'db',t:'svc',l:'04:30 reload — 실패 시 5m 뒤 1회, 옛 스냅샷 유지'}, t:'하루 한 번 다시 읽어요 (04:30)',
+       sum:'크론잡이 바꾼 매핑을 웹 앱이 따라잡는 시점이에요.', pts:['<code>mapping.reload.cron=0 30 4 * * *</code>, Asia/Seoul']},
+      {ids:['b_reg','e_boot2','b_first','j_refresh','e_refresh_adapter','r_adapter','e_adapter_sup','x_sup'], sq:{k:'burst',f:'ad',t:'sup',l:'fetchDaily — 오늘~+30일 · 50개 묶음 · 초당 4회'}, t:'갱신 잡이 요금·재고를 받아요 (기동 직후 + 5분마다)',
+       sum:'인메모리 매핑의 숙소를 공급사별 50개씩 넘겨 날짜별 1박 값을 받아요.', pts:['A 는 30일 범위 한 번, B 는 날짜마다 1박씩','429 만 지수 백오프 1→2→4… 초(60초 상한, 5회), 예산은 절반']},
+      {ids:['j_refresh','e_refresh_store','j_store','e_store_redis','x_redis'], sq:{k:'msg',f:'svc',t:'redis',l:'MULTI DEL → HSET → EXPIRE(900s) + 상태 키'}, t:'Redis 에 통째로 교체해요',
+       sum:'숙소당 Hash 하나를 지우고 다시 써요. 덧쓰기만 하면 지난 날짜 필드가 영원히 남기 때문이에요.', pts:['필드 <code>{roomTypeId}:{yyyyMMdd}</code>, 값 <code>재고|1박 총액|통화|조식|최대 인원</code>','<code>stay:v1:status:{supplier}</code> 에 lastSuccessAt']},
+      {ids:['j_store','o_log','f_degrade'], sq:{k:'self',ln:'svc',l:'실패 공급사 → 상태 키 + error 로그 · 값은 TTL 까지 유지'}, done:true, t:'실패해도 값은 남아요 ✓',
+       sum:'공급사 하나가 실패하면 그 공급사만 상태 키에 사유를 남기고, 기존 값은 TTL(15분)까지 검색에 쓰여요. 검색 응답에는 failures 로 드러나요.', pts:['TTL 이 지나면 그 숙소는 저하 모드(직접 호출)로 넘어가요','지표·모니터는 코드에 없고 설계만이에요']}
+    ]}
+  };
+  /* 시퀀스 뷰 스윔레인 (스토리의 sq가 참조) */
+  var SEQ_LANES = ['cl','ctl','svc','ad','redis','sup','db'];
+  var SEQ_DEF = {
+    cl:{name:'클라이언트', sub:'앱 백엔드 · curl'},
+    ctl:{name:'컨트롤러 · 검증', sub:'StaySearchController', us:true},
+    svc:{name:'검색 · 배치 코어', sub:'StaySearchService · Jobs', us:true},
+    ad:{name:'어댑터 · 묶음', sub:'SupplierAClient · B · ChunkedFetch', us:true},
+    redis:{name:'Redis', sub:'stay:v1:*', infra:true},
+    sup:{name:'Supplier A · B', sub:'Mock :9090', infra:true},
+    db:{name:'MySQL', sub:'hotel_mapping · room_type_mapping', infra:true}
+  };
+  var SEQ_X = {cl:130, ctl:325, svc:520, ad:715, redis:910, sup:1105, db:1300};
+  /* 시퀀스 레인 헤더 클릭 → 지도 노드 매핑 */
+  var LANE2NODE = {cl:'r_in', ctl:'r_val', svc:'r_merge', ad:'r_adapter', redis:'x_redis', sup:'x_sup', db:'x_mysql'};
+  /* ═══ SLOT:DATA 끝 ═══ */
+  var svg = document.getElementById('mapsvg');
+  var panel = document.getElementById('panel');
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.stab'));
+
+  function clearSel(){ svg.querySelectorAll('.sel').forEach(function(e){e.classList.remove('sel');}); }
+  function clearScen(){
+    svg.classList.remove('scen');
+    svg.querySelectorAll('.on').forEach(function(e){e.classList.remove('on');});
+  }
+  function showNode(k, el){
+    var d = D[k]; if(!d) return;
+    clearSel(); el.classList.add('sel');
+    (NODE_EDGES[k]||[]).forEach(function(id){ var e=svg.querySelector('[data-k="'+id+'"]'); if(e){e.classList.add('sel');} });
+    setDockMin(false);
+    var kc = {edge:'k-edge',boot:'k-boot',req:'k-req',fb:'k-fb',ext:'k-ext',obs:'k-obs'}[d.k]||'k-node';
+    var kl = {edge:'엣지 (흐름)',boot:'부팅 · 1회',req:'요청 파이프라인',fb:'에러 계약',ext:'외부 의존',obs:'관측'}[d.k]||'노드';
+    var h = '<span class="kind '+kc+'">'+kl+'</span>'
+      + '<h3>'+d.t+(d.en?'<span class="en">'+d.en+'</span>':'')+'</h3>';
+    if(d.sum) h += '<p class="lead">'+d.sum+'</p>';
+    if(d.pts) h += '<ul class="facts">'+d.pts.map(function(x){return '<li>'+x+'</li>';}).join('')+'</ul>';
+    if(d.cd) h += '<pre><code>'+d.cd+'</code></pre>';
+    if(d.o) h += '<div class="ours"><b>포인트</b> — '+d.o+'</div>';
+    if(d.src) h += '<div class="src">'+d.src+'</div>';
+    if(d.lk) h += '<div class="links">'+d.lk.map(function(l){return '<a href="'+l.u+'" target="_blank" rel="noopener">'+l.n+' ↗</a>';}).join('')+'</div>';
+    panel.innerHTML = h;
+  }
+  function showScen(sid){
+    setDockMin(false);
+    clearSel(); clearScen();
+    tabs.forEach(function(t){ t.setAttribute('aria-pressed', String(t.dataset.s===sid)); });
+    if(sid==='all'){
+      panel.innerHTML='<p class="empty">전체 보기. 시나리오 탭을 누르면 해당 경로만 켜지고 단계가 여기 나와요. 박스·선 클릭 = 개별 상세.</p>';
+      return;
+    }
+    var s = SCEN[sid]; if(!s) return;
+    svg.classList.add('scen');
+    s.ids.forEach(function(id){ var e=svg.querySelector('[data-k="'+id+'"]'); if(e){e.classList.add('on');} });
+    panel.innerHTML = '<span class="kind k-scen">'+s.kind+'</span><h3>'+s.title+'</h3>'
+      + (s.sum?'<p class="lead">'+s.sum+'</p>':'')
+      + '<ol class="steps">'+s.steps.map(function(x){return '<li>'+x+'</li>';}).join('')+'</ol>';
+  }
+
+  var storyKey = null, sIdx = 0, view = 'map';
+  var storybar = document.getElementById('storybar');
+  var mapstage = document.getElementById('mapstage');
+  var seqstage = document.getElementById('seqstage');
+  var seqsvg = document.getElementById('seqsvg');
+
+  function escT(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  function renderSeqBase(){
+    var steps = STORY[storyKey].steps;
+    var Y0=100, GAP=66, H=Y0+steps.length*GAP+30;
+    var s='';
+    SEQ_LANES.forEach(function(id){
+      var L=SEQ_DEF[id], x=SEQ_X[id];
+      s+='<g class="lanehg" data-lane="'+id+'">';
+      s+='<rect class="lanehead'+(L.us?' us':'')+(L.infra?' infra':'')+'" x="'+(x-105)+'" y="14" width="210" height="46" rx="10"/>';
+      s+='<text class="lanename" x="'+x+'" y="34" text-anchor="middle">'+L.name+'</text>';
+      s+='<text class="lanesub" x="'+x+'" y="50" text-anchor="middle">'+L.sub+'</text>';
+      s+='</g>';
+      s+='<line class="lifeline" x1="'+x+'" y1="64" x2="'+x+'" y2="'+(H-10)+'"/>';
+    });
+    s+='<defs><marker id="sqah" markerWidth="10" markerHeight="10" refX="8" refY="3.5" orient="auto"><path d="M0,0 L8,3.5 L0,7 Z" fill="context-stroke"/></marker></defs>';
+    steps.forEach(function(st,i){
+      var y=Y0+i*GAP, q=st.sq;
+      s+='<g class="st'+(st.done?' done':'')+'" data-i="'+i+'">';
+      if(q.k==='self'){
+        var x=SEQ_X[q.ln];
+        s+='<rect class="selfbox" x="'+(x-104)+'" y="'+(y-16)+'" width="208" height="34" rx="9"/>';
+        s+='<text class="lb" x="'+x+'" y="'+(y+5)+'" text-anchor="middle">'+escT(q.l)+'</text>';
+        s+='<text class="num" x="'+(x-120)+'" y="'+(y+4)+'" text-anchor="end">'+(i+1)+'</text>';
+      }else{
+        var x1=SEQ_X[q.f], x2=SEQ_X[q.t], dir=x2>x1?1:-1;
+        if(q.k==='burst'){
+          [-7,0,7].forEach(function(dy){s+='<line class="ln" x1="'+x1+'" y1="'+(y+dy)+'" x2="'+(x2-dir*8)+'" y2="'+(y+dy)+'" marker-end="url(#sqah)"/>';});
+        }else{
+          s+='<line class="ln" x1="'+x1+'" y1="'+y+'" x2="'+(x2-dir*8)+'" y2="'+y+'" marker-end="url(#sqah)"/>';
+        }
+        s+='<line x1="'+Math.min(x1,x2)+'" y1="'+y+'" x2="'+Math.max(x1,x2)+'" y2="'+y+'" stroke="transparent" stroke-width="26"/>';
+        s+='<text class="lb" x="'+((x1+x2)/2)+'" y="'+(y-13)+'" text-anchor="middle">'+escT(q.l)+'</text>';
+        s+='<text class="num" x="'+(Math.min(x1,x2)-14)+'" y="'+(y+4)+'" text-anchor="end">'+(i+1)+'</text>';
+      }
+      s+='</g>';
+    });
+    seqsvg.setAttribute('viewBox','0 0 1460 '+H);
+    seqsvg.innerHTML=s;
+  }
+  function seqHighlight(){
+    seqsvg.querySelectorAll('.st').forEach(function(g){
+      var i=+g.getAttribute('data-i');
+      g.classList.toggle('on', i<=sIdx);
+      g.classList.toggle('cur', i===sIdx);
+    });
+  }
+  function applyView(){
+    var seqOn = !!storyKey && view==='seq';
+    mapstage.hidden = seqOn; seqstage.hidden = !seqOn;
+    document.getElementById('vmap').setAttribute('aria-pressed', String(view==='map'));
+    document.getElementById('vseq').setAttribute('aria-pressed', String(view==='seq'));
+  }
+  function storyClear(){
+    storyKey = null; storybar.hidden = true; view = 'map';
+    svg.querySelectorAll('.cur').forEach(function(e){e.classList.remove('cur');});
+    seqsvg.innerHTML = '';
+    document.querySelectorAll('.stab.story').forEach(function(b){b.setAttribute('aria-pressed','false');});
+    applyView();
+  }
+  function storyStart(k){
+    clearSel(); clearScen(); storyClear();
+    tabs.forEach(function(t){ t.setAttribute('aria-pressed','false'); });
+    storyKey = k; sIdx = 0;
+    svg.classList.add('scen'); storybar.hidden = false;
+    document.querySelectorAll('.stab.story').forEach(function(b){b.setAttribute('aria-pressed', String(b.dataset.st===k));});
+    renderSeqBase(); applyView(); storyUpdate();
+  }
+  function lkChips(refs){
+    if(!refs || !refs.length) return '';
+    var h = '';
+    refs.forEach(function(r){
+      if(!Array.isArray(r)){
+        h += '<a href="'+r.u+'" target="_blank" rel="noopener">'+r.n+' ↗</a>';
+        return;
+      }
+      var d = D[r[0]];
+      if(!d || !d.lk) return;
+      d.lk.forEach(function(l){
+        if(!r[1] || l.n === r[1]){ h += '<a href="'+l.u+'" target="_blank" rel="noopener">'+l.n+' ↗</a>'; }
+      });
+    });
+    return h ? '<div class="links">'+h+'</div>' : '';
+  }
+  function storyUpdate(){
+    setDockMin(false);
+    var st = STORY[storyKey], step = st.steps[sIdx];
+    svg.querySelectorAll('.on, .cur').forEach(function(e){e.classList.remove('on');e.classList.remove('cur');});
+    for(var i=0;i<=sIdx;i++){
+      st.steps[i].ids.forEach(function(id){var e=svg.querySelector('[data-k="'+id+'"]'); if(e){e.classList.add('on');}});
+    }
+    step.ids.forEach(function(id){var e=svg.querySelector('[data-k="'+id+'"]'); if(e){e.classList.add('cur');}});
+    seqHighlight();
+    panel.innerHTML = '<span class="kind k-scen">▶ '+st.title+'</span>'
+      + '<h3>'+(sIdx+1)+'. '+step.t+'</h3>'
+      + (step.sum ? '<p class="lead">'+step.sum+'</p>' : '')
+      + (step.pts ? '<ul class="facts">'+step.pts.map(function(x){return '<li>'+x+'</li>';}).join('')+'</ul>' : '')
+      + (step.n ? '<div class="ours"><b>💡</b> '+step.n+'</div>' : '')
+      + lkChips(step.lk)
+      + (sIdx===st.steps.length-1 && st.next ? '<div class="nextchain"><button class="cbtn primary" data-next="'+st.next.key+'">이어서 ▶ '+st.next.label+'</button></div>' : '');
+    document.getElementById('scur').textContent = sIdx+1;
+    document.getElementById('stot').textContent = st.steps.length;
+    document.getElementById('sprev').disabled = sIdx===0;
+    document.getElementById('snext').disabled = sIdx===st.steps.length-1;
+  }
+  document.querySelectorAll('.stab.story').forEach(function(b){ b.addEventListener('click', function(){ storyStart(b.dataset.st); }); });
+  document.getElementById('sprev').addEventListener('click', function(){ if(storyKey && sIdx>0){sIdx--; storyUpdate();} });
+  document.getElementById('snext').addEventListener('click', function(){ if(storyKey && sIdx<STORY[storyKey].steps.length-1){sIdx++; storyUpdate();} });
+  document.getElementById('vmap').addEventListener('click', function(){ if(storyKey){view='map'; applyView();} });
+  document.getElementById('vseq').addEventListener('click', function(){ if(storyKey){view='seq'; applyView();} });
+  document.getElementById('sexit').addEventListener('click', function(){ storyClear(); showScen('all'); });
+  panel.addEventListener('click', function(ev){
+    var b = ev.target.closest('[data-next]');
+    if(b){ storyStart(b.getAttribute('data-next')); }
+  });
+  var dock = document.getElementById('dock');
+  function setDockMin(min){
+    dock.classList.toggle('min', min);
+    var b = document.getElementById('dockmin');
+    b.textContent = min ? '⌃ 패널 펼치기' : '⌄ 패널 접기';
+    b.setAttribute('aria-pressed', String(min));
+  }
+  document.getElementById('dockmin').addEventListener('click', function(){
+    setDockMin(!dock.classList.contains('min'));
+  });
+  document.addEventListener('click', function(ev){
+    if(ev.target.closest('#dock')) return;
+    if(ev.target.closest('[data-k]') || ev.target.closest('.stab') || ev.target.closest('#seqsvg')) return;
+    setDockMin(true);
+  });
+  seqsvg.addEventListener('click', function(ev){
+    if(!storyKey) return;
+    var g = ev.target.closest('[data-i]');
+    if(g){ sIdx = +g.getAttribute('data-i'); storyUpdate(); return; }
+    var lh = ev.target.closest('[data-lane]');
+    if(lh){
+      var nodeId = LANE2NODE[lh.getAttribute('data-lane')];
+      var el = svg.querySelector('[data-k="'+nodeId+'"]');
+      if(el){ showNode(nodeId, el); }
+    }
+  });
+
+  tabs.forEach(function(t){ t.addEventListener('click', function(){ if(t.classList.contains('story')) return; storyClear(); showScen(t.dataset.s); }); });
+  svg.addEventListener('click', function(ev){ var g=ev.target.closest('[data-k]'); if(g){ showNode(g.getAttribute('data-k'), g); } });
+  document.addEventListener('keydown', function(e){
+    if(e.key==='Escape'){ storyClear(); showScen('all'); }
+    if(storyKey && e.key==='ArrowRight' && sIdx<STORY[storyKey].steps.length-1){ sIdx++; storyUpdate(); }
+    if(storyKey && e.key==='ArrowLeft' && sIdx>0){ sIdx--; storyUpdate(); }
+  });
+})();
+</script>
+</html>
