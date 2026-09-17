@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import com.staysupplier.stay.SupplierDailyFetchResult;
+import com.staysupplier.stay.SupplierDailyOffer;
 import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierFetchResult.ChunkFailure;
 import com.staysupplier.stay.SupplierRoomOffer;
@@ -26,28 +28,40 @@ public final class ChunkedFetch {
 
 	public static Mono<SupplierFetchResult> fetch(Supplier supplier, List<String> hotelCodes, int chunkSize,
 			Function<List<String>, Mono<List<SupplierRoomOffer>>> call) {
+		return fetchChunks(supplier, hotelCodes, chunkSize, call)
+			.map(outcome -> new SupplierFetchResult(outcome.items(), outcome.failures()));
+	}
+
+	public static Mono<SupplierDailyFetchResult> fetchDaily(Supplier supplier, List<String> hotelCodes, int chunkSize,
+			Function<List<String>, Mono<List<SupplierDailyOffer>>> call) {
+		return fetchChunks(supplier, hotelCodes, chunkSize, call)
+			.map(outcome -> new SupplierDailyFetchResult(outcome.items(), outcome.failures()));
+	}
+
+	private static <T> Mono<Outcome<T>> fetchChunks(Supplier supplier, List<String> hotelCodes, int chunkSize,
+			Function<List<String>, Mono<List<T>>> call) {
 		List<List<String>> chunks = split(hotelCodes, chunkSize);
 		if (chunks.isEmpty()) {
-			return Mono.just(SupplierFetchResult.empty());
+			return Mono.just(new Outcome<>(List.of(), List.of()));
 		}
 		return Flux.fromIterable(chunks)
 			.flatMap(chunk -> call.apply(chunk)
-				.map(offers -> new ChunkOutcome(chunk, offers, null))
+				.map(items -> new ChunkOutcome<>(chunk, items, null))
 				.onErrorResume(SupplierCallException.class, ex -> {
 					log.warn("supplier={} chunk failed hotels={} reason={}", supplier, chunk.size(), ex.getReason());
-					return Mono.just(new ChunkOutcome(chunk, List.of(), ex));
+					return Mono.just(new ChunkOutcome<T>(chunk, List.of(), ex));
 				}))
 			.collectList()
 			.flatMap(outcomes -> assemble(supplier, chunks.size(), outcomes));
 	}
 
-	private static Mono<SupplierFetchResult> assemble(Supplier supplier, int chunkCount, List<ChunkOutcome> outcomes) {
-		List<SupplierRoomOffer> offers = new ArrayList<>();
+	private static <T> Mono<Outcome<T>> assemble(Supplier supplier, int chunkCount, List<ChunkOutcome<T>> outcomes) {
+		List<T> items = new ArrayList<>();
 		List<ChunkFailure> failures = new ArrayList<>();
 		SupplierCallException firstFailure = null;
-		for (ChunkOutcome outcome : outcomes) {
+		for (ChunkOutcome<T> outcome : outcomes) {
 			if (outcome.failure() == null) {
-				offers.addAll(outcome.offers());
+				items.addAll(outcome.items());
 			}
 			else {
 				failures.add(new ChunkFailure(supplier, outcome.hotelCodes(), outcome.failure().getReason()));
@@ -57,7 +71,7 @@ public final class ChunkedFetch {
 		if (failures.size() == chunkCount) {
 			return Mono.error(firstFailure);
 		}
-		return Mono.just(new SupplierFetchResult(offers, failures));
+		return Mono.just(new Outcome<>(items, failures));
 	}
 
 	static List<List<String>> split(List<String> codes, int chunkSize) {
@@ -68,7 +82,10 @@ public final class ChunkedFetch {
 		return chunks;
 	}
 
-	private record ChunkOutcome(List<String> hotelCodes, List<SupplierRoomOffer> offers, SupplierCallException failure) {
+	private record ChunkOutcome<T>(List<String> hotelCodes, List<T> items, SupplierCallException failure) {
+	}
+
+	private record Outcome<T>(List<T> items, List<ChunkFailure> failures) {
 	}
 
 }

@@ -1,5 +1,6 @@
 package com.staysupplier.supplier.a;
 
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,6 +12,8 @@ import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
 
 import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierDailyFetchResult;
+import com.staysupplier.stay.SupplierDailyOffer;
 import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
 import com.staysupplier.stay.SupplierRoomOffer;
@@ -21,6 +24,7 @@ import com.staysupplier.supplier.Supplier;
 import com.staysupplier.supplier.SupplierCallException;
 import com.staysupplier.supplier.SupplierClient;
 import com.staysupplier.supplier.SupplierFailures;
+import com.staysupplier.supplier.SupplierRateLimiter;
 import com.staysupplier.supplier.SupplierWebClients;
 import com.staysupplier.supplier.a.SupplierAResponses.AvailabilityItem;
 import com.staysupplier.supplier.a.SupplierAResponses.AvailabilityResponse;
@@ -40,8 +44,11 @@ public class SupplierAClient implements SupplierClient {
 
 	private final WebClient webClient;
 
-	public SupplierAClient(SupplierWebClients webClients) {
+	private final SupplierRateLimiter rateLimiter;
+
+	public SupplierAClient(SupplierWebClients webClients, SupplierRateLimiter rateLimiter) {
 		this.webClient = webClients.of(Supplier.A);
+		this.rateLimiter = rateLimiter;
 	}
 
 	@Override
@@ -57,25 +64,68 @@ public class SupplierAClient implements SupplierClient {
 			.onStatus(HttpStatusCode::isError, this::toFailure)
 			.bodyToMono(HotelsResponse.class)
 			.onErrorMap(error -> SupplierFailures.classify(Supplier.A, error))
+			.transform(call -> this.rateLimiter.throttle(Supplier.A, call))
 			.map(this::normalize);
 	}
 
 	@Override
 	public Mono<SupplierFetchResult> fetchAvailability(AvailabilityQuery query) {
 		return ChunkedFetch.fetch(Supplier.A, query.hotelCodes(), MAX_HOTEL_CODES_PER_REQUEST,
-				chunk -> this.webClient.get()
-					.uri(uri -> uri.path("/a/v1/availability")
-						.queryParam("hotelCodes", String.join(",", chunk))
-						.queryParam("checkIn", query.checkIn())
-						.queryParam("checkOut", query.checkOut())
-						.queryParam("adults", query.adults())
-						.queryParam("children", query.children())
-						.build())
-					.retrieve()
-					.onStatus(HttpStatusCode::isError, this::toFailure)
-					.bodyToMono(AvailabilityResponse.class)
-					.onErrorMap(error -> SupplierFailures.classify(Supplier.A, error))
+				chunk -> callAvailability(chunk, query.checkIn(), query.checkOut(), query.adults(), query.children())
 					.map(response -> normalizeAvailability(response, query)));
+	}
+
+	/** A 는 날짜별 단가를 주므로 기간(from~to) 한 번 호출로 날짜별 값을 모두 받는다 */
+	@Override
+	public Mono<SupplierDailyFetchResult> fetchDailyAvailability(List<String> hotelCodes, LocalDate from, LocalDate to) {
+		return ChunkedFetch.fetchDaily(Supplier.A, hotelCodes, MAX_HOTEL_CODES_PER_REQUEST,
+				chunk -> callAvailability(chunk, from, to, 1, 0).map(response -> normalizeDaily(response, from, to)));
+	}
+
+	private Mono<AvailabilityResponse> callAvailability(List<String> chunk, LocalDate checkIn, LocalDate checkOut,
+			int adults, int children) {
+		return this.rateLimiter.throttle(Supplier.A, this.webClient.get()
+			.uri(uri -> uri.path("/a/v1/availability")
+				.queryParam("hotelCodes", String.join(",", chunk))
+				.queryParam("checkIn", checkIn)
+				.queryParam("checkOut", checkOut)
+				.queryParam("adults", adults)
+				.queryParam("children", children)
+				.build())
+			.retrieve()
+			.onStatus(HttpStatusCode::isError, this::toFailure)
+			.bodyToMono(AvailabilityResponse.class)
+			.onErrorMap(error -> SupplierFailures.classify(Supplier.A, error)));
+	}
+
+	private List<SupplierDailyOffer> normalizeDaily(AvailabilityResponse response, LocalDate from, LocalDate to) {
+		if (response.items() == null) {
+			throw new SupplierCallException(Supplier.A, FailureReason.INVALID_RESPONSE, "missing items");
+		}
+		int nights = (int) java.time.temporal.ChronoUnit.DAYS.between(from, to);
+		List<SupplierDailyOffer> offers = new ArrayList<>();
+		for (AvailabilityItem item : response.items()) {
+			if (isBlank(item.hotelCode()) || isBlank(item.roomTypeCode()) || isBlank(item.currency())
+					|| item.dailyRates() == null || item.dailyRates().size() != nights) {
+				log.warn("supplier=A daily offer skipped: missing code/currency or dailyRates != nights (hotelCode={}, roomTypeCode={})",
+						item.hotelCode(), item.roomTypeCode());
+				continue;
+			}
+			Integer maxOccupancy = occupancyOrUnknown(item.hotelCode(), item.roomTypeCode(), item.maxOccupancy());
+			for (DailyRate rate : item.dailyRates()) {
+				if (rate.date() == null || rate.remainingRooms() == null || rate.remainingRooms() < 0
+						|| rate.nightlyRate() == null || rate.nightlyRate() < 0 || rate.taxAmount() == null
+						|| rate.taxAmount() < 0) {
+					log.warn("supplier=A daily rate skipped: invalid (hotelCode={}, roomTypeCode={}, date={})",
+							item.hotelCode(), item.roomTypeCode(), rate.date());
+					continue;
+				}
+				offers.add(new SupplierDailyOffer(Supplier.A, item.hotelCode(), item.roomTypeCode(), maxOccupancy,
+						rate.date(), rate.remainingRooms(), rate.nightlyRate() + rate.taxAmount(), item.currency(),
+						Boolean.TRUE.equals(item.breakfastIncluded())));
+			}
+		}
+		return offers;
 	}
 
 	private Mono<SupplierCallException> toFailure(org.springframework.web.reactive.function.client.ClientResponse response) {

@@ -1,5 +1,6 @@
 package com.staysupplier.search;
 
+import java.time.LocalDate;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -8,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import reactor.core.publisher.Mono;
 
 import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierDailyFetchResult;
 import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
 import com.staysupplier.supplier.FailureReason;
@@ -26,6 +28,10 @@ class StubClient implements SupplierClient {
 
 	private AvailabilityQuery lastQuery;
 
+	private Object dailyResponse = SupplierDailyFetchResult.empty();
+
+	private final AtomicInteger dailyCalls = new AtomicInteger();
+
 	StubClient(Supplier supplier) {
 		this.supplier = supplier;
 	}
@@ -42,6 +48,20 @@ class StubClient implements SupplierClient {
 
 	int calls() {
 		return this.calls.get();
+	}
+
+	StubClient willReturnDaily(SupplierDailyFetchResult result) {
+		this.dailyResponse = result;
+		return this;
+	}
+
+	StubClient willFailDaily(FailureReason reason) {
+		this.dailyResponse = reason;
+		return this;
+	}
+
+	int dailyCalls() {
+		return this.dailyCalls.get();
 	}
 
 	AvailabilityQuery lastQuery() {
@@ -68,6 +88,17 @@ class StubClient implements SupplierClient {
 				return Mono.error(new SupplierCallException(this.supplier, reason, null));
 			}
 			return Mono.just((SupplierFetchResult) next);
+		});
+	}
+
+	@Override
+	public Mono<SupplierDailyFetchResult> fetchDailyAvailability(List<String> hotelCodes, LocalDate from, LocalDate to) {
+		return Mono.defer(() -> {
+			this.dailyCalls.incrementAndGet();
+			if (this.dailyResponse instanceof FailureReason reason) {
+				return Mono.error(new SupplierCallException(this.supplier, reason, null));
+			}
+			return Mono.just((SupplierDailyFetchResult) this.dailyResponse);
 		});
 	}
 

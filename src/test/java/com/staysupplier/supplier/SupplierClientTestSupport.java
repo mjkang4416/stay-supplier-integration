@@ -17,6 +17,11 @@ public final class SupplierClientTestSupport {
 	private SupplierClientTestSupport() {
 	}
 
+	/** 테스트에서는 예산이 지연을 만들지 않게 넉넉히 둔다 */
+	public static SupplierRateLimiter rateLimiter() {
+		return new SupplierRateLimiter(10_000);
+	}
+
 	public static SupplierWebClients webClients(String baseUrl, Duration responseTimeout) {
 		SupplierProperties properties = new SupplierProperties(Map.of(
 				Supplier.A, new SupplierProperties.Endpoint(baseUrl, API_KEY_A, Duration.ofSeconds(1), responseTimeout),

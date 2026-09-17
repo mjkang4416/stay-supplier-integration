@@ -13,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierDailyFetchResult;
+import com.staysupplier.stay.SupplierDailyOffer;
 import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
 import com.staysupplier.stay.SupplierRoomOffer;
@@ -79,7 +81,8 @@ class SupplierAClientTest {
 	}
 
 	private SupplierAClient client(Duration responseTimeout) {
-		return new SupplierAClient(SupplierClientTestSupport.webClients(server.baseUrl(), responseTimeout));
+		return new SupplierAClient(SupplierClientTestSupport.webClients(server.baseUrl(), responseTimeout),
+				SupplierClientTestSupport.rateLimiter());
 	}
 
 	@Test
@@ -159,7 +162,8 @@ class SupplierAClientTest {
 	@Test
 	void unreachableSupplierBecomesConnectionFailure() {
 		SupplierAClient client = new SupplierAClient(
-				SupplierClientTestSupport.webClients("http://localhost:1", Duration.ofSeconds(1)));
+				SupplierClientTestSupport.webClients("http://localhost:1", Duration.ofSeconds(1)),
+				SupplierClientTestSupport.rateLimiter());
 
 		assertFailure(client, FailureReason.CONNECTION, null);
 	}
@@ -263,6 +267,23 @@ class SupplierAClientTest {
 		}
 		assertThat(failure).isNotNull();
 		assertThat(failure.getReason()).isEqualTo(FailureReason.UNAVAILABLE);
+	}
+
+	@Test
+	void dailyAvailabilityIsOneCallPerChunkWithNightlyTaxIncludedValues() {
+		server.stubFor(get(urlPathEqualTo("/a/v1/availability")).willReturn(okJson(AVAILABILITY_JSON)));
+
+		SupplierDailyFetchResult result = client()
+			.fetchDailyAvailability(List.of("A-10023", "A-10044"), LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 4))
+			.block();
+
+		assertThat(result.failures()).isEmpty();
+		assertThat(result.offers()).hasSize(6).contains(
+				new SupplierDailyOffer(Supplier.A, "A-10023", "DLX-TWN", 2, LocalDate.of(2026, 9, 2), 1, 165_000L, "KRW", false),
+				new SupplierDailyOffer(Supplier.A, "A-10044", "STD-DBL", 2, LocalDate.of(2026, 9, 2), 0, 108_900L, "KRW", false));
+		server.verify(1, getRequestedFor(urlPathEqualTo("/a/v1/availability")).withQueryParam("adults", equalTo("1"))
+			.withQueryParam("checkIn", equalTo("2026-09-01"))
+			.withQueryParam("checkOut", equalTo("2026-09-04")));
 	}
 
 	@Test

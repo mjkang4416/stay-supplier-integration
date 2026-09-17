@@ -1,5 +1,6 @@
 package com.staysupplier.mapping;
 
+import java.time.LocalDate;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
@@ -8,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import reactor.core.publisher.Mono;
 
 import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierDailyFetchResult;
 import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
 import com.staysupplier.supplier.FailureReason;
@@ -65,6 +67,11 @@ class StubSupplierClient implements SupplierClient {
 	@Override
 	public Mono<SupplierFetchResult> fetchAvailability(AvailabilityQuery query) {
 		return Mono.just(SupplierFetchResult.empty());
+	}
+
+	@Override
+	public Mono<SupplierDailyFetchResult> fetchDailyAvailability(List<String> hotelCodes, LocalDate from, LocalDate to) {
+		return Mono.just(SupplierDailyFetchResult.empty());
 	}
 
 }

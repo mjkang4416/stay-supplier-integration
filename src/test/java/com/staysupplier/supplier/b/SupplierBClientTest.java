@@ -13,6 +13,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierDailyFetchResult;
+import com.staysupplier.stay.SupplierDailyOffer;
 import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
 import com.staysupplier.stay.SupplierRoomOffer;
@@ -71,7 +73,8 @@ class SupplierBClientTest {
 	}
 
 	private SupplierBClient client() {
-		return new SupplierBClient(SupplierClientTestSupport.webClients(server.baseUrl(), Duration.ofSeconds(3)));
+		return new SupplierBClient(SupplierClientTestSupport.webClients(server.baseUrl(), Duration.ofSeconds(3)),
+				SupplierClientTestSupport.rateLimiter());
 	}
 
 	@Test
@@ -190,6 +193,26 @@ class SupplierBClientTest {
 		assertThat(failure).isNotNull();
 		assertThat(failure.getReason()).isEqualTo(FailureReason.UNAVAILABLE);
 		assertThat(failure.getSupplierCode()).isEqualTo("E503");
+	}
+
+	@Test
+	void dailyAvailabilityCallsOncePerNightBecauseBOnlyGivesPeriodTotals() {
+		server.stubFor(get(urlPathEqualTo("/b/api/search")).willReturn(okJson("""
+				{ "resultCode": "0000", "resultMessage": "SUCCESS", "data": { "items": [ {
+				  "propertyId": "B77120", "roomId": "R-401", "roomName": "Deluxe Twin Room", "maxOccupancy": 2,
+				  "breakfastIncluded": true, "currency": "KRW", "totalPrice": 150000, "taxIncluded": true,
+				  "inventory": [ { "date": "2026-09-01", "remainingRooms": 3 } ] } ] } }
+				""")));
+
+		SupplierDailyFetchResult result = client()
+			.fetchDailyAvailability(List.of("B77120"), LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 4))
+			.block();
+
+		assertThat(result.offers()).hasSize(3).contains(
+				new SupplierDailyOffer(Supplier.B, "B77120", "R-401", 2, LocalDate.of(2026, 9, 3), 3, 150_000L, "KRW", true));
+		server.verify(3, getRequestedFor(urlPathEqualTo("/b/api/search")).withQueryParam("adults", equalTo("1")));
+		server.verify(getRequestedFor(urlPathEqualTo("/b/api/search")).withQueryParam("checkIn", equalTo("2026-09-02"))
+			.withQueryParam("checkOut", equalTo("2026-09-03")));
 	}
 
 	@Test

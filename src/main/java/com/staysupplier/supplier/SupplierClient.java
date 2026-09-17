@@ -1,10 +1,12 @@
 package com.staysupplier.supplier;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import reactor.core.publisher.Mono;
 
 import com.staysupplier.stay.AvailabilityQuery;
+import com.staysupplier.stay.SupplierDailyFetchResult;
 import com.staysupplier.stay.SupplierFetchResult;
 import com.staysupplier.stay.SupplierHotel;
 
@@ -31,5 +33,11 @@ public interface SupplierClient {
 	 * 일부 묶음이 실패하면 결과의 failures 에 담고, 전부 실패하면 예외를 던진다. 깨진 항목은 버리고 로그를 남긴다.
 	 */
 	Mono<SupplierFetchResult> fetchAvailability(AvailabilityQuery query);
+
+	/**
+	 * 캐시 채우기용 날짜별 재고·요금. from 이상 to 미만의 날마다 1박 값을 돌려준다 (adults=1로 모든 객실 타입 수집).
+	 * A는 기간 한 번 호출로, B는 날짜마다 1박 호출로 채운다. 부분 실패 규칙은 fetchAvailability 와 같다.
+	 */
+	Mono<SupplierDailyFetchResult> fetchDailyAvailability(List<String> hotelCodes, LocalDate from, LocalDate to);
 
 }
