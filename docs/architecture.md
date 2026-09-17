@@ -68,6 +68,15 @@ flowchart LR
 
 의존 방향은 `search`·`cache`·`mapping` → `supplier`(인터페이스)·`stay`이고, 공급사 구현 패키지(`supplier.a`, `supplier.b`)를 참조하는 곳은 `config`뿐이에요(그마저도 스캔으로 찾아요). 새 공급사는 `supplier/c`를 더하면 되고 위 패키지는 바뀌지 않아요.
 
+### 2.3 코드 읽는 순서
+
+핵심 흐름 순이에요.
+1. `search/StaySearchService` - 검색 한 건이 Redis → 공급사 직접 호출 → 병합으로 흐르는 전체 그림. `StaySearchController`, `SearchExceptionHandler`가 입구와 오류 응답
+2. `supplier/SupplierClient` → `supplier/a/SupplierAClient`, `supplier/b/SupplierBClient` - 공급사 호출과 표준 형태로의 번역. `SupplierFailures`·`FailureReason`이 실패 판정 통일, `ChunkedFetch`가 50개 묶음과 부분 실패, `SupplierWebClients`·`SupplierRateLimiter`가 타임아웃·헤더·호출 예산
+3. `mapping/MappingSyncJob` - 크론잡의 델타 반영. `MappingRegistry`·`MappingRegistryLoader`가 인메모리, `MappingSyncRunner`가 sync 프로필 종료 코드
+4. `cache/AvailabilityRefreshJob` → `AvailabilityCache` - 요금·재고를 Redis에 미리 채우는 쪽과 저장 형식 `CachedRate`
+5. `mock-supplier/.../MockSupplierController` - 공급사 대역과 장애 모드
+
 ## 3. 유스케이스와 핵심 흐름
 
 ### 3.1 행위자

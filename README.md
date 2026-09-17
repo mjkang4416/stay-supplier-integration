@@ -229,41 +229,7 @@ curl -s "$Q&fresh=true"                                                 # 8. 캐
 
 크론잡의 실패 처리는 Mock을 내린 채 `./gradlew :bootRun --args='--spring.profiles.active=sync'`를 돌리면 볼 수 있어요. 연결 실패를 30초 간격으로 3회 재시도한 뒤 두 공급사 모두 건너뛰고 종료 코드 1로 끝나며, 기존 매핑은 그대로 남아요.
 
-## 6. 저장소 구조와 코드 읽는 순서
-
-```
-stay-supplier-integration/          # Gradle 멀티 모듈 루트
-├── README.md                       # 결론: 무엇을·어떻게·왜, 빌드·실행
-├── JOURNAL.md                      # 과정: 설계 의사결정 기록, 일자별 진행, 테스트, AI 활용
-├── CLAUDE.md                       # 개발 지침 (명령, 개요, docs 라우팅, 코드 규칙)
-├── docs/                           # 공식 명세
-│   ├── architecture.md             #   전체 구성, 유스케이스, 공급사 연동, Mock, 테스트 구성
-│   ├── stay-model.md               #   표준 숙박 상품 모델, 공급사 필드 대응, 매핑
-│   ├── stay-search-api.md          #   통합 검색 API 명세
-│   ├── domain-research.md          #   도메인 리서치 원페이저
-│   ├── system-story.html           #   인터랙티브 로직 지도 (GitHub Pages 로 열림)
-│   └── images/                     #   README 미리보기 이미지
-├── build.gradle.kts                # 본 앱 빌드
-├── settings.gradle.kts             # 모듈 등록
-├── mise.toml                       # JDK 21 고정
-├── compose.yaml                    # 로컬 MySQL 8.4 + Redis 7.4
-├── docker/mysql/conf.d/my.cnf      # MySQL 설정 (utf8mb4, UTC)
-├── .claude/skills/                 # 반복 작업 스킬 (run-local, query-mapping, query-cache, test-search-api, mock-fault, add-supplier)
-├── src/                            # 본 애플리케이션 (:8080)
-└── mock-supplier/                  # Mock Supplier (:9090). 본 앱과 코드 참조 없음
-    └── src/main/resources/responses/   # 공급사 A·B 숙소 목록 JSON (재고·요금은 요청 날짜대로 생성)
-```
-
-패키지 구조는 [architecture.md 2장](docs/architecture.md)에 있어요.
-
-코드를 읽는 순서는 핵심 흐름 순이에요.
-1. `search/StaySearchService` - 검색 한 건이 Redis → 공급사 직접 호출 → 병합으로 흐르는 전체 그림. `StaySearchController`, `SearchExceptionHandler`가 입구와 오류 응답
-2. `supplier/SupplierClient` → `supplier/a/SupplierAClient`, `supplier/b/SupplierBClient` - 공급사 호출과 표준 형태로의 번역. `SupplierFailures`·`FailureReason`이 실패 판정 통일, `ChunkedFetch`가 50개 묶음과 부분 실패, `SupplierWebClients`·`SupplierRateLimiter`가 타임아웃·헤더·호출 예산
-3. `mapping/MappingSyncJob` - 크론잡의 델타 반영. `MappingRegistry`·`MappingRegistryLoader`가 인메모리, `MappingSyncRunner`가 sync 프로필 종료 코드
-4. `cache/AvailabilityRefreshJob` → `AvailabilityCache` - 요금·재고를 Redis에 미리 채우는 쪽과 저장 형식 `CachedRate`
-5. `mock-supplier/.../MockSupplierController` - 공급사 대역과 장애 모드
-
-## 7. 한계와 향후 개선
+## 6. 한계와 향후 개선
 
 알려진 한계
 - 요금·재고 캐시는 팟 하나 기준이에요. 팟이 여러 대면 갱신 잡이 중복되므로 리더 선출이나 별도 팟 분리가 필요한데 설계만 했어요.
@@ -280,7 +246,7 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 - 같은 호텔을 파는 A·B를 조식 조건까지 고려해 비교하는 중복 상품 병합, 통화 처리, 예약 대행 흐름.
 - 갱신 시 변경 감지율을 기록해 주기·TTL을 실측으로 조정.
 
-## 8. 문서
+## 7. 문서
 - [docs/architecture.md](docs/architecture.md): 아키텍처. 전체 구성, 유스케이스, 공급사 연동, Mock Supplier, 실행·테스트 구성
 - [docs/stay-model.md](docs/stay-model.md): 통합 모델 설계. 표준 모델, 공급사 필드 대응, 매핑
 - [docs/stay-search-api.md](docs/stay-search-api.md): API 명세
