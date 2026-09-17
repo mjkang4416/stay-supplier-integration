@@ -6,7 +6,7 @@ Java 21 · Spring Boot 4.0 · Spring MVC + WebClient · MyBatis + MySQL 8.4 · R
 
 ## 1. 빠른 시작
 
-JDK 21과 Docker가 필요해요. JDK는 mise를 쓰면 `mise trust && mise install`로 받아요(버전은 `mise.toml`에 고정). 터미널 세 개를 써요.
+JDK 21과 Docker가 필요해요. JDK는 mise를 쓰면 `mise trust && mise install`로 받을 수 있어요.
 
 ```bash
 docker compose up -d                                        # MySQL + Redis
@@ -17,9 +17,10 @@ curl 'http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026
 ```
 
 - 테스트: `./gradlew build` (Docker가 떠 있어야 Testcontainers 통합 테스트가 돌아요)
-- API 문서(Swagger UI): http://localhost:8080/swagger-ui.html
-- `bootRun` 앞의 `:`는 루트 모듈만 실행한다는 뜻이에요. 없으면 Mock 모듈까지 같이 떠요
-- 검색 날짜는 오늘부터 30일 안이면 캐시를 타요. 포트 변경과 장애·부분 실패 확인 절차는 [5장](#5-실행-상세)
+- API 문서: 애플리케이션이 떠 있을 때 http://localhost:8080/swagger-ui.html 에서 Swagger UI로 볼 수 있어요
+- 이 저장소는 본 앱과 Mock Supplier 두 모듈이라 `:bootRun`(본 앱), `:mock-supplier:bootRun`(Mock)처럼 모듈을 지정해요. `./gradlew bootRun`처럼 모듈 없이 실행하면 Mock 모듈의 bootRun까지 같이 실행돼요
+- 검색 날짜는 오늘부터 30일 안으로 넣으면 미리 채운 캐시로 바로 응답해요. 그 밖의 날짜도 검색되지만 공급사를 직접 호출해요
+- 포트가 겹칠 때 바꾸는 방법과 공급사 장애·부분 실패를 재현하는 절차는 [5장 실행 상세](#5-실행-상세)에 있어요
 
 ## 2. 무엇을 만들었나
 
@@ -34,8 +35,6 @@ curl 'http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026
 | 재시도 (선택) | 구현 | 크론잡 고정 30초 × 3회, 검색 즉시 1회, 갱신 잡 429 지수 백오프 | [architecture.md 4.6](docs/architecture.md) |
 | 정규화 실패 격리 (선택) | 부분 | 깨진 항목만 버리고 원인과 함께 로그. 격리 저장소는 없음 | [architecture.md 4.1](docs/architecture.md) |
 | 연동 지표·모니터, 서킷 브레이커 | 설계만 | 지표 정의, 알림 규칙, 한도 탐색 절차. 코드에는 실패 로그만 | [architecture.md 4.6~4.7](docs/architecture.md) |
-
-범위 밖: 인증·인가, 결제, 관리자 기능, 프론트엔드, 실제 외부 상용 API 연동, 지역·키워드 필터, 정렬·페이징.
 
 ## 3. 어떻게 동작하나
 
