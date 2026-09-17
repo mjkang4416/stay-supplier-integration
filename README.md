@@ -83,18 +83,26 @@ flowchart LR
 
 단위는 숙소 → 객실 타입 → (날짜별) 재고·요금이에요. 어댑터가 공급사 응답을 이 단위로 바꾸고, 식별자는 공급사 코드 그대로 두며 내부 식별자는 매핑(4.2)이 붙여요.
 
-**살린 정보와 버린 정보**
+**살린 정보** (표준 모델에 남긴 것)
 
-| 정보 | Supplier A | Supplier B | 표준 모델 | 비고 |
-|---|---|---|---|---|
-| 숙소 코드·이름 | `hotelCode`, `hotelName` | `propertyId`, `propertyName` | `hotelCode`, `hotelName` | 매핑이 내부 식별자를 붙인다 |
-| 객실 타입 코드·이름 | `roomTypeCode`, `roomTypeName` | `roomId`, `roomName` | `roomTypeCode`, `roomTypeName` | 숙소 안에서만 유일 |
-| 최대 수용 인원 | `maxOccupancy` | `maxOccupancy` | `maxOccupancy` | 성인+아동 합산. 없으면 미상(null)으로 저장. 검색 응답은 필수라 재고·요금 응답 값 → 매핑 값 순으로 채우고, 둘 다 없으면 그 객실 타입을 응답에서 제외 |
-| 재고 | `dailyRates[].remainingRooms` | `inventory[].remainingRooms` | 날짜별 재고 → 기간 최솟값 `availableRooms` | 4.4 연박 판정 |
-| 요금 | `nightlyRate` + `taxAmount` (세금 별도, 날짜별) | `totalPrice` (세금 포함, 기간 총액) | `totalPrice` 세금 포함 총액 + `currency` | 아래 요금 기준 |
-| 조식 포함 여부 | `breakfastIncluded` | `breakfastIncluded` | `breakfastIncluded` | 같은 객실도 공급사마다 달라 요금 비교의 조건 |
-| 통화 | `currency` | `currency` | `currency` | ISO 4217, 금액은 최소 단위 정수 |
-| 버림 | 날짜별 단가·세금 내역 (총액으로 합쳐짐) | `resultCode`, `resultMessage` (판정에만 사용), `taxIncluded` (항상 true) | | 공급사 원본 응답은 저장하지 않는다 |
+| 정보 | 표준 모델 | Supplier A | Supplier B |
+|---|---|---|---|
+| 숙소 코드·이름 | `hotelCode`, `hotelName` | `hotelCode`, `hotelName` | `propertyId`, `propertyName` |
+| 객실 타입 코드·이름 | `roomTypeCode`, `roomTypeName` (숙소 안에서만 유일) | `roomTypeCode`, `roomTypeName` | `roomId`, `roomName` |
+| 최대 수용 인원 | `maxOccupancy` (성인+아동 합산, 없으면 미상) | `maxOccupancy` | `maxOccupancy` |
+| 재고 | `availableRooms` = 기간 내 날짜별 재고의 최솟값 | `dailyRates[].remainingRooms` (날짜별) | `inventory[].remainingRooms` (날짜별) |
+| 요금 | `totalPrice` 세금 포함 총액 + `currency` | `nightlyRate` + `taxAmount` (날짜별, 세금 별도) | `totalPrice` (기간 총액, 세금 포함) |
+| 조식 포함 여부 | `breakfastIncluded` | `breakfastIncluded` | `breakfastIncluded` |
+| 통화 | `currency` (ISO 4217, 금액은 최소 단위 정수) | `currency` | `currency` |
+
+**버린 정보**
+- A: 날짜별 단가와 세금 내역. 총액으로 합쳐져요.
+- B: `resultCode`·`resultMessage`(실패 판정에만 써요), `taxIncluded`(항상 true).
+- 공급사 원본 응답은 어디에도 저장하지 않아요.
+
+메모
+- 최대 인원은 검색 응답에서 필수라 재고·요금 응답 값 → 매핑 값 순으로 채우고, 둘 다 없으면 그 객실 타입을 응답에서 빼요.
+- 조식 포함 여부는 같은 객실도 공급사마다 달라서 요금을 비교할 때의 조건이에요.
 
 **요금 기준**
 - 선택: 세금 포함 총액(고객 결제 금액). A는 날짜별 (nightlyRate + taxAmount)의 합, B는 totalPrice 그대로. 캐시에는 세금 포함 1박 값을 둬요.
