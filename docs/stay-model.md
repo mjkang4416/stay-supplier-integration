@@ -65,7 +65,7 @@
 | `id` | BIGINT PK, AUTO_INCREMENT | 내부 숙소 식별자 |
 | `supplier` | VARCHAR(20) | 공급사 코드 `A`·`B` |
 | `supplier_hotel_code` | VARCHAR(100) | 공급사 숙소 코드, `hotelCode` 또는 `propertyId` |
-| `hotel_name` | VARCHAR(255) | 숙소명. 매핑 관리·병합 대비용이고 검색 응답은 재고·요금 응답 값을 우선해요 |
+| `hotel_name` | VARCHAR(255) | 숙소명. 검색 응답의 `hotelName`은 이 값이에요 |
 | `active` | BOOLEAN | 최근 갱신 목록에 있으면 true, 사라졌으면 false. false로 바뀐 시각은 `updated_at`으로 확인 |
 | `created_at`, `updated_at` | DATETIME | |
 | UNIQUE `uk_supplier_hotel` | `supplier` + `supplier_hotel_code` | 같은 공급사 코드는 항상 같은 행 |
@@ -133,7 +133,7 @@ A-10023과 B77120은 실제로 같은 숙소이지만 공급사가 다르므로 
 | 매핑 행 | 유지. `active=false`, 바뀐 시각은 `updated_at` |
 | 내부 식별자를 참조하는 우리 데이터, 예를 들어 찜·예약 내역·리뷰 | 유지 |
 | 검색 대상 | 제외, `active=true`만 조회 |
-| 캐시의 재고·요금 값 | 삭제 |
+| 캐시의 재고·요금 값 | 인메모리 매핑에서 빠져 읽히지 않다가 15분 TTL로 사라져요 |
 | 다시 판매를 시작하면 | 갱신 잡의 upsert가 같은 행을 `active=true`로 되돌려요. 식별자와 우리 데이터가 그대로 이어져요 |
 
 ## 4. 제약과 주의점

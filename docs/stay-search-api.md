@@ -40,7 +40,6 @@
 | `roomTypes[].price.breakfastIncluded` | boolean | 요금에 조식이 포함되는지. 같은 객실도 공급사마다 다를 수 있어 비교 조건 |
 | `source` | string | `cache`면 캐시에서 한 숙소라도 읽은 응답, `supplier`면 전부 공급사에 직접 물어 만든 응답 |
 | `failures[]` | array | 실패한 공급사. `supplier`, `reason`은 architecture 4.1의 `FailureReason`, `affectedHotels`는 값을 못 받은 숙소 수 |
-| `fresh` | boolean | 공급사에 직접 물어 만든 응답이면 true, 캐시에서 한 숙소라도 읽었으면 false |
 
 ### 1.3 부분 실패 표현
 일부 공급사가 실패하면 상태 코드는 200이고, 성공한 공급사의 결과와 함께 `failures`에 실패한 공급사·원인·영향 숙소 수를 담아요. 어댑터 안에서 50개 묶음 일부만 실패한 경우도 같은 배열에 묶음 단위로 들어가요. 조회 대상 공급사가 전부 실패하면 503이에요.

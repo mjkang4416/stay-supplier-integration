@@ -2,7 +2,7 @@
 name: query-cache
 description: |
   로컬 Redis 의 요금·재고 캐시(stay:v1:{hotelId} Hash)와 공급사별 갱신 상태 키를 조회해 갱신 잡이 채운 값, TTL, 실패 기록을 확인해요.
-  Triggers: "캐시 확인", "Redis 에 뭐 있어", "캐시 값 보여줘", "TTL 확인", "갱신 잡 돌았어?", "왜 fresh=true 야"
+  Triggers: "캐시 확인", "Redis 에 뭐 있어", "캐시 값 보여줘", "TTL 확인", "갱신 잡 돌았어?", "왜 source 가 supplier 야"
   Do NOT use for: MySQL 매핑 조회(query-mapping), 검색 응답 확인(test-search-api), 캐시 채우기(갱신 잡이 5분마다 자동으로 한다)
 argument-hint: "hotelId (생략하면 키 목록과 상태 키)"
 allowed-tools: Bash(docker compose exec*)
@@ -11,7 +11,7 @@ allowed-tools: Bash(docker compose exec*)
 # 요금·재고 캐시 조회
 
 ## 전제
-- Redis 가 Docker 컨테이너 `stay-supplier-redis` 에서 떠 있고, 애플리케이션이 기동해 갱신 잡 첫 갱신(약 10초)가 끝났어요.
+- Redis 가 Docker 컨테이너 `stay-supplier-redis` 에서 떠 있고, 애플리케이션이 기동해 갱신 잡 첫 갱신(약 10초)이 끝났어요.
 - 키·값 형식은 `docs/architecture.md` 4.5. 숙소당 Hash 하나: 키 `stay:v1:{hotelId}`, 필드 `{roomTypeId}:{yyyyMMdd}`, 값 `재고|세금 포함 1박|통화|조식(0/1)|최대 인원`. `hotelId`·`roomTypeId` 는 `query-mapping` 의 `id` 다.
 
 ## 실행 순서
@@ -43,5 +43,5 @@ allowed-tools: Bash(docker compose exec*)
 
 ## 주의사항
 - `KEYS` 는 로컬 확인용이에요. 운영 Redis 에서는 `SCAN` 을 써요.
-- B 숙소는 날짜마다 1박 호출로 채우므로(기간 총액만 주는 공급사) 첫 갱신가 A 보다 오래 걸려요.
+- B 숙소는 날짜마다 1박 호출로 채우므로(기간 총액만 주는 공급사) 첫 갱신이 A 보다 오래 걸려요.
 - 값을 직접 고쳐 넣지 않아요. 캐시를 쓰는 곳은 갱신 잡뿐이고 검색은 읽기만 해요(CLAUDE.md 코드 규칙).

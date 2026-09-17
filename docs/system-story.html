@@ -397,7 +397,7 @@
       src:'src/main/java/com/staysupplier/mapping/MappingRegistryLoader.java:18-41 · MappingRegistry.java:41-60'},
     b_first:{k:'boot',t:'갱신 잡 첫 바퀴',en:'CacheConfig.RefreshScheduler · initialDelay PT0S',
       sum:'기동 직후 오늘~+30일 요금·재고를 Redis 에 채우기 시작해요. 첫 바퀴가 끝나기 전 검색은 저하 모드예요.',
-      pts:['<code>@Scheduled(fixedDelayString="${cache.refresh-interval}", initialDelayString="PT0S")</code>','<code>cache.refresh-enabled=false</code> 면 빈 자체가 안 만들어져요 (테스트)','한 바퀴 예외는 error 로그로 삼키고 다음 주기에 다시 해요','readiness 와 연동해 첫 바퀴 전 트래픽을 막는 것은 설계만이에요 (architecture 4.5)'],
+      pts:['<code>@Scheduled(fixedDelayString="${cache.refresh-interval}", initialDelayString="PT0S")</code>','<code>cache.refresh-enabled=false</code> 면 빈 자체가 안 만들어져요 (테스트)','한 바퀴 예외는 error 로그로 삼키고 다음 주기에 다시 해요','readiness 와 연동해 첫 갱신 전 트래픽을 막는 것은 설계만이에요 (architecture 4.5)'],
       src:'src/main/java/com/staysupplier/config/CacheConfig.java:41-68'},
     r_in:{k:'req',t:'GET /api/v1/stays/search',en:'StaySearchController',
       sum:'검색 조건은 날짜와 인원뿐이에요. 대상은 보유 숙소 전체예요.',
@@ -413,7 +413,7 @@
       src:'src/main/java/com/staysupplier/search/StaySearchService.java:74-82, 131-190'},
     r_gate:{k:'req',t:'값 없는 숙소 있나?',en:'missing 집합',
       sum:'캐시에서 못 채운 숙소만 다음 단계로 가요. 비어 있으면 fan-out 자체를 건너뛰어요.',
-      pts:['<code>missing.isEmpty() ? List.of() : Flux…block()</code>','비는 경우: 첫 바퀴 전, 창(오늘~+30일) 밖 날짜, Redis 장애·초기화, <code>fresh=true</code>','캐시로 채운 숙소 수 <code>servedFromCache</code> 는 응답의 <code>fresh</code> 판정에 써요 (0 이면 true)'],
+      pts:['<code>missing.isEmpty() ? List.of() : Flux…block()</code>','비는 경우: 첫 갱신 전, 창(오늘~+30일) 밖 날짜, Redis 장애·초기화, <code>fresh=true</code>','캐시로 채운 숙소 수 <code>servedFromCache</code> 는 응답의 <code>fresh</code> 판정에 써요 (0 이면 true)'],
       src:'src/main/java/com/staysupplier/search/StaySearchService.java:84-88, 124'},
     r_fan:{k:'req',t:'공급사 fan-out',en:'Flux.flatMap · retryWhen',
       sum:'공급사 수만큼 병렬로 부르고, 실패는 공급사 단위로 가둬요. 스레드는 요청 스레드 하나가 끝에서 block() 해요.',
@@ -473,7 +473,7 @@
       src:'src/main/java/com/staysupplier/supplier/ChunkedFetch.java:41-76'},
     f_degrade:{k:'fb',t:'저하 모드',en:'Redis 장애 · 키 없음 → 직접 호출',
       sum:'Redis 가 없어도 검색은 살아 있어요. 값이 없는 숙소만 공급사를 직접 불러 응답해요.',
-      pts:['<code>readCache</code> 의 RuntimeException → warn 로그, 0건 반환 → 전부 <code>missing</code>','키 없음(첫 바퀴 전·FLUSHALL·창 밖 날짜)도 같은 경로예요','응답의 <code>fresh: true</code> 로 드러나요','갱신 잡의 Redis 쓰기 실패는 error 로그 후 다음 주기에 다시 해요'],
+      pts:['<code>readCache</code> 의 RuntimeException → warn 로그, 0건 반환 → 전부 <code>missing</code>','키 없음(첫 갱신 전·FLUSHALL·창 밖 날짜)도 같은 경로예요','응답의 <code>source: supplier</code> 로 드러나요','갱신 잡의 Redis 쓰기 실패는 error 로그 후 다음 주기에 다시 해요'],
       src:'src/main/java/com/staysupplier/search/StaySearchService.java:151-154, 167-179 · cache/AvailabilityRefreshJob.java:84-87'},
     x_sup:{k:'ext',t:'Supplier A · B',en:'로컬 Mock Supplier (:9090)',
       sum:'실제 외부 서비스는 호출하지 않아요. 부록 스펙대로 만든 Mock 이 정상·장애·무응답을 재현해요.',
@@ -538,7 +538,7 @@
     s_cache:{title:'③ 캐시 상태', kind:'상태',
       sum:'검색은 Redis 를 먼저 읽고, 값이 없는 숙소만 공급사를 불러요. 캐시를 채우는 것은 갱신 잡뿐이에요.',
       ids:['r_cache','e_cache_redis','x_redis','r_gate','e_gate_merge','e_gate_fan','r_fan','f_degrade','j_refresh','e_refresh_store','j_store','e_store_redis','b_first'],
-      steps:['<b>적중</b> — 숙소 × 객실 타입 × 숙박일 필드가 전부 있으면 공급사 호출 0회, 수 ms. 응답 <code>source: cache</code>.','<b>저하 모드</b> — 키 없음(첫 바퀴 전 · FLUSHALL · 창 밖 날짜) 또는 Redis 예외 → 그 숙소만(예외면 전부) 직접 호출. <code>fresh: true</code>.','<b>fresh=true</b> — 예약 직전 재확인용. Redis 를 읽지 않고 전부 직접 호출해요.','<b>채우기</b> — 갱신 잡이 5분마다 오늘~+30일을 Hash 통째 교체(TTL 900s). 실패 공급사는 상태 키에 기록되고 검색 응답의 <code>failures</code> 에 붙어요. 값은 TTL 까지 유지돼요.']}
+      steps:['<b>적중</b> — 숙소 × 객실 타입 × 숙박일 필드가 전부 있으면 공급사 호출 0회, 수 ms. 응답 <code>source: cache</code>.','<b>저하 모드</b> — 키 없음(첫 갱신 전 · FLUSHALL · 창 밖 날짜) 또는 Redis 예외 → 그 숙소만(예외면 전부) 직접 호출. <code>source: supplier</code>.','<b>fresh=true</b> — 예약 직전 재확인용. Redis 를 읽지 않고 전부 직접 호출해요.','<b>채우기</b> — 갱신 잡이 5분마다 오늘~+30일을 Hash 통째 교체(TTL 900s). 실패 공급사는 상태 키에 기록되고 검색 응답의 <code>failures</code> 에 붙어요. 값은 TTL 까지 유지돼요.']}
   };
   /* 스토리(단계 재생): 각 step = {ids(지도 조명), sq(시퀀스 뷰 표현), t, sum, pts, n?, lk?, done?}
      sq: {k:'msg',f:'레인',t:'레인',l:'라벨'} | {k:'self',ln:'레인',l:'라벨'} | {k:'burst',...} */
