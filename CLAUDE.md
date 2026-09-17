@@ -28,7 +28,8 @@
 - Swagger UI: `http://localhost:8080/swagger-ui.html`
 
 ### 스킬 (`.claude/skills/`)
-- `run-local` 로컬 실행 순서, `query-mapping` 매핑 테이블 조회, `test-search-api` 검색 API 확인 순서, `mock-fault` Mock 장애 모드 전환
+- `run-local` 로컬 실행 순서, `query-mapping` 매핑 테이블 조회, `query-cache` Redis 캐시·상태 키 조회, `test-search-api` 검색 API 확인 순서, `mock-fault` Mock 장애 모드 전환, `add-supplier` 신규 공급사 추가 절차
+- 형식: 프런트매터 `description`에 한 줄 설명 + `Triggers:`(부르는 말) + `Do NOT use for:`(경계), `allowed-tools`로 쓰는 도구 제한. 본문은 전제 → 실행 순서 → 확인 포인트 → 주의사항
 
 ## 아키텍처 개요
 

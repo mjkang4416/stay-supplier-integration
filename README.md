@@ -130,7 +130,7 @@ flowchart LR
 **신규 Supplier 추가 시 수정 범위**
 - 추가: `Supplier` enum 값, `supplier/c` 패키지(클라이언트·전용 응답 형식·실패 판정 규칙), `supplier.endpoints.c.*` 설정, WireMock 테스트.
 - 건드리지 않음: 크론잡, 매핑 테이블·매퍼, 검색 서비스, 표준 형태, WebClient 구성. 설정을 빠뜨리면 기동 시 바로 실패한다.
-- 자세히: [architecture.md 4.5](docs/architecture.md)
+- 자세히: [architecture.md 4.5](docs/architecture.md). 실행 절차는 `.claude/skills/add-supplier`
 
 ### 4.4 통합 검색 API
 
@@ -242,7 +242,7 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 ├── mise.toml                       # JDK 21 고정
 ├── compose.yaml                    # 로컬 MySQL 8.4 + Redis 7.4
 ├── docker/mysql/conf.d/my.cnf      # MySQL 설정 (utf8mb4, UTC)
-├── .claude/skills/                 # 반복 작업 스킬 (run-local, query-mapping, test-search-api, mock-fault)
+├── .claude/skills/                 # 반복 작업 스킬 (run-local, query-mapping, query-cache, test-search-api, mock-fault, add-supplier)
 ├── src/                            # 본 애플리케이션 (:8080)
 └── mock-supplier/                  # Mock Supplier (:9090). 본 앱과 코드 참조 없음
     └── src/main/resources/responses/   # 공급사 A·B 숙소 목록 JSON (재고·요금은 요청 날짜대로 생성)
