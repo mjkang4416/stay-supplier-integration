@@ -12,7 +12,7 @@ allowed-tools: Bash(docker compose exec*)
 
 ## 전제
 - Redis 가 Docker 컨테이너 `stay-supplier-redis` 에서 떠 있고, 애플리케이션이 기동해 갱신 잡 첫 갱신(약 10초)가 끝났어요.
-- 키·값 형식은 `docs/architecture.md` 4.8. 숙소당 Hash 하나: 키 `stay:v1:{hotelId}`, 필드 `{roomTypeId}:{yyyyMMdd}`, 값 `재고|세금 포함 1박|통화|조식(0/1)|최대 인원`. `hotelId`·`roomTypeId` 는 `query-mapping` 의 `id` 다.
+- 키·값 형식은 `docs/architecture.md` 4.6. 숙소당 Hash 하나: 키 `stay:v1:{hotelId}`, 필드 `{roomTypeId}:{yyyyMMdd}`, 값 `재고|세금 포함 1박|통화|조식(0/1)|최대 인원`. `hotelId`·`roomTypeId` 는 `query-mapping` 의 `id` 다.
 
 ## 실행 순서
 1. 키 목록 (숙소별 Hash + 공급사별 상태 키)

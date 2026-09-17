@@ -24,12 +24,12 @@ curl 'http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026
 | ① 표준 숙박 상품 모델 + 매핑 저장 | 구현 | 숙소 → 객실 타입 → 날짜별 재고·요금. 공급사 코드 ↔ 내부 식별자는 DB에 두고 크론잡이 매일 델타로 갱신 | [stay-model.md](docs/stay-model.md) |
 | ② Supplier 어댑터 | 구현 | 공급사별 형식은 어댑터 패키지 안에만. A의 HTTP 상태와 B의 `resultCode`를 같은 실패 사유 8가지로 통일 | [architecture.md 4.1\~4.2](docs/architecture.md) |
 | ③ 통합 검색 API | 구현 | 50개 묶음 병렬 조회, 연박은 날짜별 재고의 최솟값으로 판정, 예약 불가 기본 제외, 부분 실패는 `failures`로 | [stay-search-api.md](docs/stay-search-api.md) |
-| ④ 연동 견고성 | 구현 | 연결 1초·응답 3초, 한 공급사가 죽어도 나머지로 응답 | [architecture.md 4.3\~4.4](docs/architecture.md) |
+| ④ 연동 견고성 | 구현 | 연결 1초·응답 3초, 한 공급사가 죽어도 나머지로 응답 | [architecture.md 3장·4.4](docs/architecture.md) |
 | ⑤ Mock Supplier | 구현 | 정상·장애·무응답 모드를 API로 전환 | [architecture.md 5장](docs/architecture.md) |
-| 요금·재고 캐시 | 구현 | Redis에 5분마다 미리 채우고 검색은 Redis 우선. 비어 있으면 직접 호출 | [architecture.md 4.8](docs/architecture.md) |
-| 재시도 | 구현 | 크론잡 고정 30초 × 3회, 검색 즉시 1회, 갱신 잡 429 지수 백오프 | [architecture.md 4.6](docs/architecture.md) |
+| 요금·재고 캐시 | 구현 | Redis에 5분마다 미리 채우고 검색은 Redis 우선. 비어 있으면 직접 호출 | [architecture.md 4.6](docs/architecture.md) |
+| 재시도 | 구현 | 크론잡 고정 30초 × 3회, 검색 즉시 1회, 갱신 잡 429 지수 백오프 | [architecture.md 4.4](docs/architecture.md) |
 | 정규화 실패 격리 | 부분 | 깨진 항목만 버리고 원인과 함께 로그. 격리 저장소는 없음 | [architecture.md 4.1](docs/architecture.md) |
-| 연동 지표·모니터, 서킷 브레이커, 갱신 잡의 다중 팟 배치 | 설계만 | 지표 정의, 알림 규칙, 한도 탐색 절차, 갱신 잡 리더 선출. 코드에는 실패 로그만 있고 갱신 잡은 팟 하나 기준 | [architecture.md 4.6\~4.7](docs/architecture.md) |
+| 연동 지표·모니터, 서킷 브레이커, 갱신 잡의 다중 팟 배치 | 설계만 | 지표 정의, 알림 규칙, 한도 탐색 절차, 갱신 잡 리더 선출. 코드에는 실패 로그만 있고 갱신 잡은 팟 하나 기준 | [architecture.md 4.4\~4.5](docs/architecture.md) |
 
 ## 3. 어떻게 동작하나
 

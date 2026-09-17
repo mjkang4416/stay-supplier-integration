@@ -288,7 +288,7 @@
       <g class="node" data-k="x_redis"><rect class="box acc-b" x="1120" y="320" width="260" height="80" rx="10"/><text class="t sm" x="1250" y="342" text-anchor="middle">Redis · 요금·재고 캐시</text><text class="s" x="1250" y="357" text-anchor="middle">stay:v1:{hotelId} Hash · TTL 15m</text><rect class="mchip" x="1132" y="366" width="140" height="16" rx="4"/><text class="mtx" x="1138" y="377.5">stay:v1:status:{supplier}</text></g>
       <g class="node" data-k="x_mysql"><rect class="box acc-b" x="1120" y="462" width="260" height="64" rx="10"/><text class="t sm" x="1250" y="488" text-anchor="middle">MySQL · 매핑만 저장</text><text class="s" x="1250" y="505" text-anchor="middle">hotel_mapping · room_type_mapping</text></g>
 
-      <g class="node" data-k="o_log"><rect class="box cfg" x="1120" y="660" width="260" height="64" rx="10"/><text class="t sm" x="1250" y="686" text-anchor="middle">warn/error 로그 + 상태 키</text><text class="s" x="1250" y="703" text-anchor="middle">지표·모니터는 설계만 (architecture 4.7)</text></g>
+      <g class="node" data-k="o_log"><rect class="box cfg" x="1120" y="660" width="260" height="64" rx="10"/><text class="t sm" x="1250" y="686" text-anchor="middle">warn/error 로그 + 상태 키</text><text class="s" x="1250" y="703" text-anchor="middle">지표·모니터는 설계만 (architecture 4.5)</text></g>
     </svg>
   </div>
 
@@ -374,7 +374,7 @@
 
   <footer>
     소스코드 직접 열람으로 확정 (2026-09-17 기준): <code>search/StaySearchService.java</code>, <code>search/StaySearchRequest.java</code>, <code>search/SearchExceptionHandler.java</code>, <code>search/StaySearchController.java</code>, <code>supplier/SupplierFailures.java</code>, <code>supplier/ChunkedFetch.java</code>, <code>supplier/SupplierRateLimiter.java</code>, <code>supplier/SupplierWebClients.java</code>, <code>supplier/SupplierProperties.java</code>, <code>supplier/a/SupplierAClient.java</code>, <code>supplier/b/SupplierBClient.java</code>, <code>mapping/MappingSyncJob.java</code>, <code>mapping/MappingSyncRunner.java</code>, <code>mapping/MappingRegistryLoader.java</code>, <code>mapping/MappingRegistry.java</code>, <code>cache/AvailabilityRefreshJob.java</code>, <code>cache/AvailabilityCache.java</code>, <code>cache/CachedRate.java</code>, <code>config/CacheConfig.java</code>, <code>config/SupplierClientConfig.java</code>, <code>src/main/resources/application.properties</code>.
-    범위 외: Mock Supplier 내부 동작(별도 모듈), K8s CronJob 실제 배포 구성(설계만, <code>docs/architecture.md</code> 6.2), 연동 지표·모니터(설계만, 4.7). 공급사 A·B 는 로컬 Mock 이 대신하며 실제 외부 서비스는 호출하지 않아요.
+    범위 외: Mock Supplier 내부 동작(별도 모듈), K8s CronJob 실제 배포 구성(설계만, <code>docs/architecture.md</code> 6장), 연동 지표·모니터(설계만, 4.7). 공급사 A·B 는 로컬 Mock 이 대신하며 실제 외부 서비스는 호출하지 않아요.
   </footer>
 </div>
 
@@ -397,7 +397,7 @@
       src:'src/main/java/com/staysupplier/mapping/MappingRegistryLoader.java:18-41 · MappingRegistry.java:41-60'},
     b_first:{k:'boot',t:'갱신 잡 첫 바퀴',en:'CacheConfig.RefreshScheduler · initialDelay PT0S',
       sum:'기동 직후 오늘~+30일 요금·재고를 Redis 에 채우기 시작해요. 첫 바퀴가 끝나기 전 검색은 저하 모드예요.',
-      pts:['<code>@Scheduled(fixedDelayString="${cache.refresh-interval}", initialDelayString="PT0S")</code>','<code>cache.refresh-enabled=false</code> 면 빈 자체가 안 만들어져요 (테스트)','한 바퀴 예외는 error 로그로 삼키고 다음 주기에 다시 해요','readiness 와 연동해 첫 바퀴 전 트래픽을 막는 것은 설계만이에요 (architecture 4.8)'],
+      pts:['<code>@Scheduled(fixedDelayString="${cache.refresh-interval}", initialDelayString="PT0S")</code>','<code>cache.refresh-enabled=false</code> 면 빈 자체가 안 만들어져요 (테스트)','한 바퀴 예외는 error 로그로 삼키고 다음 주기에 다시 해요','readiness 와 연동해 첫 바퀴 전 트래픽을 막는 것은 설계만이에요 (architecture 4.6)'],
       src:'src/main/java/com/staysupplier/config/CacheConfig.java:41-68'},
     r_in:{k:'req',t:'GET /api/v1/stays/search',en:'StaySearchController',
       sum:'검색 조건은 날짜와 인원뿐이에요. 대상은 보유 숙소 전체예요.',
@@ -489,7 +489,7 @@
       src:'src/main/resources/mapper/HotelMappingMapper.xml · RoomTypeMappingMapper.xml · schema.sql'},
     o_log:{k:'obs',t:'warn/error 로그 + 상태 키',en:'지표·모니터는 설계만',
       sum:'코드에 지표는 없어요. 외부 호출·DB·Redis 실패는 공급사·원인·원본 코드를 로그로 남기고, 갱신 잡은 상태 키에도 적어요.',
-      pts:['검색: <code>search supplier=A failed reason=… hotels=n</code> (warn), 전부 실패 (error)','크론잡: <code>mapping sync skipped supplier=… reason=…</code>, 보류 (error)','갱신 잡: <code>cache refresh supplier=… failed reason=… (values kept until TTL)</code> (error)','Datadog 로그 모니터·알림 규칙·지표 정의는 <code>docs/architecture.md</code> 4.7 에 설계로만 있어요'],
+      pts:['검색: <code>search supplier=A failed reason=… hotels=n</code> (warn), 전부 실패 (error)','크론잡: <code>mapping sync skipped supplier=… reason=…</code>, 보류 (error)','갱신 잡: <code>cache refresh supplier=… failed reason=… (values kept until TTL)</code> (error)','Datadog 로그 모니터·알림 규칙·지표 정의는 <code>docs/architecture.md</code> 4.5 에 설계로만 있어요'],
       src:'src/main/java/com/staysupplier/cache/AvailabilityRefreshJob.java:70-87 · search/StaySearchService.java:208 · mapping/MappingSyncJob.java:77-79'},
     e_boot1:{k:'edge',t:'설정 → 매핑 로드',en:'빈 생성 순서',sum:'설정 바인딩과 WebClient 생성이 끝난 뒤 모든 싱글턴이 만들어지고 나서 매핑을 읽어요.',src:'config/SupplierClientConfig.java · mapping/MappingRegistryLoader.java:38-41'},
     e_boot2:{k:'edge',t:'매핑 로드 → 갱신 잡 첫 바퀴',en:'스케줄러 initialDelay 0',sum:'인메모리 매핑이 있어야 갱신 잡이 공급사별 숙소 코드를 꺼낼 수 있어요.',src:'config/CacheConfig.java:58-66'},

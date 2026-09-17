@@ -122,14 +122,14 @@ flowchart LR
   - A4 Redis 쓰기 실패: 이번 갱신 실패 로그, 다음 주기에 다시. 검색은 저하 모드
   - A5 429: 백오프 뒤 그 공급사 호출 한도를 절반으로
 
-## 4. 공급사 연동
+## 4. 공급사 연동 규칙
 
 ### 4.1 어댑터 구조와 경계
 
 - 공통 인터페이스 `supplier.SupplierClient`: `supplier()`, `fetchHotels()`, `fetchAvailability(query)`, `fetchDailyAvailability(codes, from, to)`. 반환은 `Mono`이고 호출자가 여러 공급사를 합친 뒤 끝에서 한 번 `block()`해요.
 - 구현체는 `supplier.a.SupplierAClient`, `supplier.b.SupplierBClient`이고, 전용 응답 형식 `SupplierAResponses`·`SupplierBResponses`는 package-private예요.
 - 어댑터 밖으로 나가는 형태는 `stay` 패키지의 표준 형태와 `supplier.FailureReason`뿐이에요. 식별자는 공급사 코드 그대로이고 내부 식별자 배정은 매핑이 해요.
-- WebClient는 `supplier.SupplierWebClients`가 공급사마다 하나씩 기동 시 만들어요. 기본 URL, `X-Api-Key` 헤더, 연결·응답 타임아웃이 미리 적용되고, 설정이 빠진 공급사가 있으면 기동이 실패해요.
+- WebClient는 `supplier.SupplierWebClients`가 공급사마다 하나씩 기동 시 만들어요. 기본 URL, `X-Api-Key` 헤더, 연결 1초·응답 3초 타임아웃이 미리 적용되고, 설정이 빠진 공급사가 있으면 기동이 실패해요. 타임아웃 설정 키는 `supplier.endpoints.{a|b}.connect-timeout`과 `response-timeout`이고, 초과하면 응답은 `FailureReason.TIMEOUT`, 연결은 `CONNECTION`이에요. 값의 근거는 [README 4.5](../README.md)에 있어요.
 - 정규화 실패 격리: 식별에 필요한 숙소 코드·이름과 객실 타입 코드·이름이 빠진 항목은 그 항목만 버리고 warn 로그를 남겨요. `maxOccupancy`가 없거나 1 미만이면 객실 타입은 살리되 기본값을 넣지 않고 미상, 즉 null로 둬요. 인원 필터에 추측한 값이 들어가면 안 되기 때문이에요. 검색 응답에서는 이 값이 계약상 필수이므로 ② 응답 값 → 매핑 값 순으로 채우고, 둘 다 없으면 그 객실 타입을 응답에서 제외하고 로그·지표를 남겨요. 필드 길이는 예제 데이터 범위인 코드 100자·이름 255자로 두고 따로 검사하지 않아요.
 
 ### 4.2 실패 판정
@@ -149,26 +149,11 @@ A는 HTTP 상태 코드로, B는 항상 HTTP 200에 본문 `resultCode`로 실�
 
 "없음"은 두 종류로 나눠요. 공급사가 `items: []`로 "팔 게 없다"고 말한 것은 정상 0건이고, 성공 코드인데 `data`나 `items` 구조 자체가 없는 것은 깨진 응답이에요. 후자를 0건으로 읽으면 실제로 있는 상품이 검색에서 사라지는데 지표는 성공으로 남아 알림이 울리지 않아요. 판정 코드는 각 공급사 패키지 안에 있어요. B는 `SupplierBClient.reasonOf`, 공통 규칙은 `SupplierFailures`예요.
 
-### 4.3 타임아웃
-
-설정 키는 `supplier.endpoints.{a|b}.connect-timeout` 기본 1초와 `response-timeout` 기본 3초이고, `SupplierWebClients`가 Spring Boot `HttpClientSettings`를 거쳐 reactor-netty 타임아웃으로 적용해요. 초과하면 응답은 `FailureReason.TIMEOUT`, 연결은 `CONNECTION`이에요. 값의 근거는 [README 4.5](../README.md)에 있어요.
-
-### 4.4 부분 실패 처리
-
-실패는 병합하기 전에 공급사 단위로 가둬요. 각 공급사의 `flatMap` 체인 안에서 `SupplierCallException`을 그 공급사의 실패 결과로 바꾼 뒤 모으므로, 한 공급사가 실패해도 나머지 결과는 살고 전체 지연은 가장 느린 공급사의 응답 타임아웃을 넘지 않아요.
-
-| 경로 | 실패한 공급사 | 나머지 |
-|---|---|---|
-| 크론잡 `MappingSyncJob` | 건너뛰고 기존 매핑 유지, 결과에 원인 기록, 잡은 종료 코드 1 | 델타 반영 |
-| 검색 직접 호출 | `failures: [{ supplier, reason }]`에 표시. 어댑터의 묶음 일부 실패는 실패한 묶음의 숙소 수도 함께 | 200으로 응답. 전부 실패면 503 + `Retry-After` |
-| Redis 갱신 잡 `AvailabilityRefreshJob` | 상태 키에 마지막 실패 원인·시각 기록. 값은 TTL까지 유지 | 검색이 상태 키를 읽어 `failures`에 마지막 실패 원인으로 표시 |
-
-
-### 4.5 신규 Supplier 추가 절차
+### 4.3 신규 Supplier 추가 절차
 
 고치는 곳과 고치지 않는 곳은 [README 4.3](../README.md)에, 단계별 절차는 `.claude/skills/add-supplier`에 있어요.
 
-### 4.6 재시도·서킷 브레이커
+### 4.4 재시도·서킷 브레이커
 
 구현 상태: 크론잡 재시도는 `MappingSyncJob`과 `mapping.sync.retry-*`, 검색 재시도는 `StaySearchService`와 `search.retry-*`로 구현. 서킷 브레이커는 설계만.
 
@@ -181,7 +166,7 @@ A는 HTTP 상태 코드로, B는 항상 HTTP 200에 본문 `resultCode`로 실�
 
 **서킷 브레이커 (설계만)**: 검색 직접 호출 경로와 Redis 갱신 잡처럼 호출이 잦은 곳에만 걸어요. 최근 10회 중 5회 이상 실패하면 30초 동안 열고, 반개방에서 시험 호출 1회가 성공하면 닫아요. 열린 동안 그 공급사는 즉시 `failures: [{ supplier, reason: CIRCUIT_OPEN }]`로 표시되어 사용자가 타임아웃을 기다리지 않아요. 크론잡 목록 호출은 하루 두 번이라 걸지 않아요. 구현하면 Resilience4j `CircuitBreaker`를 WebClient 체인에 붙여요.
 
-### 4.7 연동 지표·모니터링
+### 4.5 연동 지표·모니터링
 
 구현 상태: 설계만. 지표 정의, Datadog 전송 방식, 알림 규칙, 한도 탐색 절차를 명세하고 코드에는 넣지 않았어요. 안내 문서가 이 항목을 "설계만으로도 가능"으로 두었고, 모니터 자체는 외부 SaaS 설정이라 저장소에서 재현할 수 없기 때문이에요. 코드가 남기는 것은 실패 로그(공급사·원인·원본 코드·묶음 크기)뿐이에요.
 
@@ -232,7 +217,7 @@ A는 HTTP 상태 코드로, B는 항상 HTTP 200에 본문 `resultCode`로 실�
 
 **역할 구분**: 비율·추세·임계치는 모니터(예: Datadog), 정규화 실패·예상 못 한 예외처럼 한 건이라도 조사해야 하는 것은 예외 추적(예: Sentry)에 보내요. 429는 정상 운영 상황이므로 예외로 보내지 않아요. 429 모니터의 알림은 갱신 잡의 초당 호출 횟수를 조정하는 신호로만 써요(4.8).
 
-### 4.8 요금·재고 캐시
+### 4.6 요금·재고 캐시
 
 구현 상태: 갱신 잡 `AvailabilityRefreshJob`, 저장소 `AvailabilityCache`, 검색의 Redis 우선 읽기, 공급사별 호출 한도 `SupplierRateLimiter`는 구현. 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트, 첫 갱신과 readiness 연동, 팟 여러 대일 때 갱신 잡 리더 선출은 설계만. 결정과 이유는 [README 4.6](../README.md)에 있어요.
 
@@ -268,22 +253,8 @@ Redis Hash  키: stay:v1:{hotelId}
 
 ## 5. Mock Supplier
 
-공급사 A·B의 API를 흉내 내는 별도 모듈. 채점 대상이 아니라 연동 동작을 검증하는 수단이므로 최소로 구현해요.
+공급사 A·B의 API를 흉내 내는 별도 모듈이에요. 채점 대상이 아니라 연동 동작을 검증하는 수단이라 최소로 구현했고, 본 앱과 코드를 공유하지 않아요. 숙소 목록은 `src/main/resources/responses/*.json`의 고정 데이터이고, 재고·요금은 요청한 날짜마다 부록 예제의 3일 패턴을 기준일 2026-09-01부터 반복해 만들어요. 9/1\~9/4를 요청하면 예제와 같은 값이 나와요. 모드는 재고·요금 API에만 걸리고 숙소 목록 API는 항상 정상이에요.
 
-### 5.1 엔드포인트
-
-| 엔드포인트 | 역할 | 모드 적용 |
-|---|---|---|
-| `GET /a/v1/hotels` | Supplier A 숙소 목록 | 없음 |
-| `GET /a/v1/availability?hotelCodes=...&checkIn=&checkOut=` | Supplier A 재고·요금, 날짜별 단가·세금 별도 | 있음 |
-| `GET /b/api/properties` | Supplier B 숙소 목록 | 없음 |
-| `GET /b/api/search?propertyIds=...&checkIn=&checkOut=` | Supplier B 재고·요금, 기간 총액·세금 포함 | 있음 |
-| `POST /control/{a\|b}/mode?value=...` | 공급사별 모드 전환 | - |
-
-- 숙소 목록은 `src/main/resources/responses/*.json`의 고정 데이터예요. 재고·요금은 요청한 `checkIn`부터 체크아웃 전날까지 날짜마다 부록 예제의 3일 패턴을 기준일 2026-09-01부터 반복해 만들어요. 9/1\~9/4를 요청하면 예제와 같은 값 A 429,000·B 452,000이고, 다른 날짜도 같은 패턴이라 캐시 값과 직접 호출 값이 일치해요. `hotelCodes`/`propertyIds`는 무시해요.
-- 요청당 숙소 수 상한 초과 오류, 응답 지연 모드, 숙소 목록 API 장애 모드는 필요해지면 추가해요.
-
-### 5.2 모드
 
 | 모드 | Supplier A 재고·요금 응답 | Supplier B 재고·요금 응답 |
 |---|---|---|
@@ -296,9 +267,6 @@ curl -X POST 'http://localhost:9090/control/a/mode?value=error'         # A 장�
 curl -X POST 'http://localhost:9090/control/b/mode?value=no-response'   # B 무응답
 curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # A 복구
 ```
-
-### 5.3 구성 방식 선택
-별도 모듈로 둬요. WireMock 독립 실행은 코드가 없는 대신 매핑 문법과 시나리오 상태 API를 익혀야 하고 공급사별 모드 전환이 복잡해요. 본 앱 안의 테스트용 컨트롤러는 같은 프로세스에서 자기 자신을 호출해 스레드가 묶이고, 분리하려면 앱을 두 번 띄우면서 본 앱 로직을 꺼야 해요. 자동 테스트에서는 이 모듈에 의존하지 않고 WireMock을 테스트 안에서 띄워요.
 
 ## 6. 운영 구성 (설계)
 같은 이미지를 두 워크로드로 배포해요.
@@ -329,4 +297,4 @@ spec:
               image: <app-image>
               args: ["--spring.profiles.active=sync"]
 ```
-`concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 해요. 앱 안의 고정 30초 × 3회 재시도는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡아요. 잡 실패 이벤트와 마지막 성공 시각이 25시간을 넘으면 메트릭 모니터로 알려요. 규칙은 4.7이에요.
+`concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 해요. 앱 안의 고정 30초 × 3회 재시도는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡아요. 잡 실패 이벤트와 마지막 성공 시각이 25시간을 넘으면 메트릭 모니터로 알려요. 규칙은 4.5예요.

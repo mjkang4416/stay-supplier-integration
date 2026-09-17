@@ -23,7 +23,7 @@
 | `SupplierDailyOffer` · ② 날짜별 조회, 캐시 채우기 | `date` | date | 숙박일 |
 | | `remainingRooms` | int | 그날 예약 가능한 객실 수 |
 | | `nightlyTotal` | long | 그날 1박 요금, 세금 포함 |
-| `CachedRate` · Redis 필드 값 | 재고, 세금 포함 1박 요금, 통화, 조식, 최대 인원 | 세로 막대로 이은 문자열 | 캐시 필드 하나의 값. 형식은 architecture 4.8 |
+| `CachedRate` · Redis 필드 값 | 재고, 세금 포함 1박 요금, 통화, 조식, 최대 인원 | 세로 막대로 이은 문자열 | 캐시 필드 하나의 값. 형식은 architecture 4.6 |
 
 ## 2. 공급사 필드 대응
 

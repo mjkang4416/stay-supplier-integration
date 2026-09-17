@@ -4,7 +4,7 @@
 
 ## 1. 통합 검색 API
 
-구현 상태: 구현. 평소 검색은 갱신 잡이 미리 채운 Redis를 읽어 `fresh: false`로 응답하고, 첫 갱신 전·범위 밖 날짜·Redis 장애로 값이 없는 숙소와 `fresh=true`일 때만 공급사를 직접 호출해요. 상세는 [architecture 4.8](architecture.md).
+구현 상태: 구현. 평소 검색은 갱신 잡이 미리 채운 Redis를 읽어 `fresh: false`로 응답하고, 첫 갱신 전·범위 밖 날짜·Redis 장애로 값이 없는 숙소와 `fresh=true`일 때만 공급사를 직접 호출해요. 상세는 [architecture 4.6](architecture.md).
 
 ### 1.1 요청
 `GET /api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&children=0`
@@ -82,7 +82,7 @@
 ## 2. 조회 규칙
 
 ### 2.1 조회 대상과 공급사별 묶음
-인메모리 매핑 `MappingRegistry`의 active 숙소 전체가 대상이에요. 먼저 Redis에서 숙소별 객실 타입 × 숙박일 필드를 파이프라인으로 읽고, 값이 없는 숙소만 공급사별로 묶어 `fetchAvailability`를 불러요. `fresh=true`면 전부 불러요. 갱신 잡의 마지막 시도가 실패한 공급사는 `failures`에 그 원인으로 표시해요. 요청당 50개인 공급사 한도는 어댑터가 알고 안에서 잘라 병렬 호출하며, 묶음 일부가 실패하면 성공한 항목과 실패 묶음을 함께 돌려줘요. active 숙소가 없는 공급사는 부르지 않아요. 공급사 간 호출은 병렬이고, 실패는 공급사 단위로 가둔 뒤 병합해요. 상세는 [architecture 4.4](architecture.md).
+인메모리 매핑 `MappingRegistry`의 active 숙소 전체가 대상이에요. 먼저 Redis에서 숙소별 객실 타입 × 숙박일 필드를 파이프라인으로 읽고, 값이 없는 숙소만 공급사별로 묶어 `fetchAvailability`를 불러요. `fresh=true`면 전부 불러요. 갱신 잡의 마지막 시도가 실패한 공급사는 `failures`에 그 원인으로 표시해요. 요청당 50개인 공급사 한도는 어댑터가 알고 안에서 잘라 병렬 호출하며, 묶음 일부가 실패하면 성공한 항목과 실패 묶음을 함께 돌려줘요. active 숙소가 없는 공급사는 부르지 않아요. 공급사 간 호출은 병렬이고, 실패는 공급사 단위로 가둔 뒤 병합해요. 상세는 [architecture 3.2](architecture.md).
 
 ### 2.2 연박 예약 가능 객실 수 판정
 `availableRooms` = 체크인일부터 체크아웃 전날까지의 날짜별 `remainingRooms` 중 최솟값. 하루라도 0이면 0이고 예약 불가예요. 요금은 A는 날짜별 (nightlyRate + taxAmount)의 합, B는 totalPrice 그대로. 응답이 객실 타입 단위라 호실 배정·업그레이드·분할 예약은 다루지 않아요.
