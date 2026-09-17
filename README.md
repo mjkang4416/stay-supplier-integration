@@ -207,7 +207,7 @@ curl -s "$Q&fresh=true"                                                 # 8. 캐
 크론잡의 실패 처리는 Mock을 내린 채 `./gradlew :bootRun --args='--spring.profiles.active=sync'`를 돌리면 볼 수 있어요. 로그에 `mapping sync retry supplier=A attempt=1..3`이 30초 간격으로 찍힌 뒤 `mapping sync skipped supplier=A reason=CONNECTION (existing mapping kept)`와 `exitCode=1`이 나오고, `hotel_mapping`의 행은 그대로예요.
 
 ## 6. 문서
-- [docs/architecture.md](docs/architecture.md): 아키텍처. 전체 구성, 유스케이스, 공급사 연동, Mock Supplier, 실행·테스트 구성
+- [docs/architecture.md](docs/architecture.md): 아키텍처. 전체 구성, 유스케이스, 공급사 연동, Mock Supplier, 운영 구성
 - [docs/stay-model.md](docs/stay-model.md): 통합 모델 설계. 표준 모델, 공급사 필드 대응, 매핑
 - [docs/stay-search-api.md](docs/stay-search-api.md): API 명세
 - [docs/domain-research.md](docs/domain-research.md): 도메인 리서치 원페이저. 공급사 구조, 공급사 간 표현 차이

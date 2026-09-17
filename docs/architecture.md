@@ -79,15 +79,7 @@ flowchart LR
 
 ## 3. 유스케이스와 핵심 흐름
 
-### 3.1 행위자
-
-| 행위자 | 역할 |
-|---|---|
-| 검색 클라이언트 | 날짜·인원으로 통합 검색 API를 호출하는 쪽 (앱·웹 서버) |
-| 운영자 / 스케줄러 | 매핑 생성을 트리거하는 쪽 |
-| 공급사 A·B (Mock) | 숙소 목록과 재고·요금을 제공하는 외부 시스템 |
-
-### 3.2 UC-1 매핑 생성·갱신
+### 3.1 UC-1 매핑 생성·갱신
 
 - 목적: 공급사의 숙소·객실 타입 코드를 내부 식별자에 대응시켜 저장해요.
 - 트리거: 매일 04:00 Asia/Seoul에 K8s CronJob이 `sync` 프로필로 1회 실행(로컬은 `./gradlew :bootRun --args='--spring.profiles.active=sync'`). 웹 앱은 매핑을 만들지 않고 기동 시와 04:30에 DB에서 읽어요. 결정 근거는 README 4.2
@@ -102,7 +94,7 @@ flowchart LR
   - A3 공급사 목록에서 사라진 숙소: 비활성(`active=false`), 행은 삭제하지 않음. 직전 active의 절반 넘게 사라지면 공급사 쪽 장애로 보고 비활성화만 보류하고 알림
   - A4 동시 실행: 식별자가 중복 생성되지 않아야 해요.
 
-### 3.3 UC-2 통합 검색
+### 3.2 UC-2 통합 검색
 
 - 목적: 날짜·인원으로 보유 숙소 전체의 예약 가능 객실과 요금을 하나의 형태로 돌려줘요.
 - 트리거: `GET /api/v1/stays/search`
@@ -125,7 +117,7 @@ flowchart LR
   - A9 Redis에 값이 없거나 Redis 장애: 값이 없는 숙소만(장애면 전부) 공급사 직접 호출(저하 모드), `fresh: true`로 표시. 값이 없는 경우는 갱신 잡 첫 바퀴 전, 요청 날짜가 캐시 창(오늘\~+30일) 밖, 키 만료예요. 갱신 잡의 마지막 시도가 실패한 공급사는 `failures`에 표시
   - A8 보유 숙소가 요청당 상한을 넘음: 묶음을 나눠 호출
 
-### 3.4 UC-3 요금·재고 캐시 갱신
+### 3.3 UC-3 요금·재고 캐시 갱신
 
 - 목적: 검색이 공급사를 부르지 않고 응답하도록 오늘\~+30일의 재고·요금을 Redis에 미리 채워요.
 - 트리거: 웹 앱 기동 직후, 그 뒤 5분마다(`cache.refresh-interval`).
@@ -139,15 +131,6 @@ flowchart LR
   - A3 매핑에 없는 코드: 버림. 다음 새벽 크론잡이 채우면 그때부터
   - A4 Redis 쓰기 실패: 이번 바퀴 실패 로그, 다음 주기에 다시. 검색은 저하 모드
   - A5 429: 백오프 뒤 그 공급사 예산을 절반으로
-
-### 3.5 UC-4 Mock 모드 전환 (개발·검증용)
-
-- 트리거: `POST /control/{supplier}/mode`
-- 흐름: 공급사별 모드(정상 / 장애 / 무응답)를 바꿔요. 재고·요금 API에만 적용돼요.
-
-### 3.6 선택 유스케이스
-
-- 예약 대행, 중복 상품 병합, 통화 처리: 이번 범위 밖. 예약 직전 재확인은 `fresh=true`로 제공해요.
 
 ## 4. 공급사 연동
 
@@ -230,7 +213,7 @@ Flux.fromIterable(clients)
 | 429 | 위와 같음 (고정 간격. `Retry-After` 값을 대기에 쓰는 것은 확장) | 없음 (더 부르면 악화) | 지수 백오프 1→2→4→…초, 60초 상한, 최대 5회 (`cache.rate-limit-*`). 예산은 429마다 절반(하한 초당 0.5회) |
 | 400·401, B `resultCode` 오류, 깨진 응답 | 없음 (다시 해도 같음) | 없음 | 없음 |
 
-잡 수준 재실행은 K8s `backoffLimit: 2`(6.2)가 맡아요. 재시도 실패는 지표에 `result=retry`로 남겨요.
+잡 수준 재실행은 K8s `backoffLimit: 2`(6장)가 맡아요. 재시도 실패는 지표에 `result=retry`로 남겨요.
 
 **서킷 브레이커 (설계만)**: 검색 직접 호출 경로와 Redis 갱신 잡처럼 호출이 잦은 곳에만 걸어요. 최근 10회 중 5회 이상 실패(최소 호출 수 10)면 30초 열고, 반개방에서 시험 호출 1회가 성공하면 닫아요. 열린 동안 그 공급사는 즉시 `failures: [{ supplier, reason: CIRCUIT_OPEN }]`로 표시되어 사용자가 타임아웃을 기다리지 않아요. 크론잡 목록 호출은 하루 두 번이라 걸지 않아요. 구현하면 Resilience4j `CircuitBreaker`를 WebClient 체인에 붙여요.
 
@@ -330,12 +313,7 @@ Redis Hash  키: stay:v1:{hotelId}
 
 공급사 A·B의 API를 흉내 내는 별도 모듈. 채점 대상이 아니라 연동 동작을 검증하는 수단이므로 최소로 구현해요.
 
-### 5.1 실행
-```bash
-./gradlew :mock-supplier:bootRun   # 포트 9090
-```
-
-### 5.2 엔드포인트
+### 5.1 엔드포인트
 
 | 엔드포인트 | 역할 | 모드 적용 |
 |---|---|---|
@@ -348,7 +326,7 @@ Redis Hash  키: stay:v1:{hotelId}
 - 숙소 목록은 `src/main/resources/responses/*.json`의 고정 데이터예요. 재고·요금은 요청한 `checkIn`\~`checkOut`(체크아웃 미포함) 날짜마다 부록 예제의 3일 패턴(기준일 2026-09-01)을 반복해 만들어요. 9/1\~9/4를 요청하면 예제와 같은 값(A 429,000 / B 452,000)이고, 다른 날짜도 같은 패턴이라 캐시 값과 직접 호출 값이 일치해요. `hotelCodes`/`propertyIds`는 무시해요.
 - 요청당 숙소 수 상한 초과 오류, 응답 지연 모드, 숙소 목록 API 장애 모드는 필요해지면 추가해요.
 
-### 5.3 모드
+### 5.2 모드
 
 | 모드 | Supplier A 재고·요금 응답 | Supplier B 재고·요금 응답 |
 |---|---|---|
@@ -362,23 +340,10 @@ curl -X POST 'http://localhost:9090/control/b/mode?value=no-response'   # B 무�
 curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # A 복구
 ```
 
-### 5.4 구성 방식 선택
-별도 모듈로 둬요. WireMock 독립 실행은 코드가 없는 대신 매핑 문법과 시나리오 상태 API를 익혀야 하고 공급사별 모드 전환이 복잡해요. 본 앱 안의 테스트용 컨트롤러는 같은 프로세스에서 자기 자신을 호출해 스레드가 묶이고, 분리하려면 앱을 두 번 띄우면서 본 앱 로직을 꺼야 해요. 자동 테스트에서는 이 모듈에 의존하지 않고 WireMock을 테스트 안에서 띄워요 (7장).
+### 5.3 구성 방식 선택
+별도 모듈로 둬요. WireMock 독립 실행은 코드가 없는 대신 매핑 문법과 시나리오 상태 API를 익혀야 하고 공급사별 모드 전환이 복잡해요. 본 앱 안의 테스트용 컨트롤러는 같은 프로세스에서 자기 자신을 호출해 스레드가 묶이고, 분리하려면 앱을 두 번 띄우면서 본 앱 로직을 꺼야 해요. 자동 테스트에서는 이 모듈에 의존하지 않고 WireMock을 테스트 안에서 띄워요.
 
-## 6. 실행 구성
-
-### 6.1 로컬
-MySQL·Redis는 Docker, Mock Supplier는 별도 프로세스, 애플리케이션은 로컬 실행. 서버 Docker화는 하지 않아요.
-```bash
-docker compose up -d                                          # MySQL + Redis
-./gradlew :mock-supplier:bootRun                              # Mock (9090)
-./gradlew :bootRun --args='--spring.profiles.active=sync'     # 매핑 갱신 잡 1회 실행 후 종료 (종료 코드: 전부 성공 0, 공급사 실패 1)
-./gradlew :bootRun                                            # 웹 앱 (8080). ':' 없이 실행하면 Mock 모듈까지 같이 떠요
-```
-
-웹 앱은 기동 직후 갱신 잡이 오늘\~+30일 요금·재고를 Redis에 채우고 5분마다 다시 채워요. Redis가 없으면 기동은 되고 검색은 저하 모드(직접 호출)로 동작해요. sync 프로필은 `spring.main.web-application-type=none`으로 웹 서버 없이 뜨고, `MappingSyncRunner`가 잡을 돌린 뒤 `ExitCodeGenerator`로 종료 코드를 정해요. 웹 앱은 `MappingRegistryLoader`가 웹 서버가 뜨기 전에 DB에서 매핑을 올리고(실패하면 기동 실패), `mapping.reload.cron`(04:30 Asia/Seoul)에 다시 읽어요. 리로드 실패는 기존 인메모리를 유지하고 5분 뒤 한 번 더 시도해요.
-
-### 6.2 운영 (설계)
+## 6. 운영 구성 (설계)
 같은 이미지를 두 워크로드로 배포해요.
 
 | 워크로드 | 프로필 | 역할 |
@@ -408,18 +373,3 @@ spec:
               args: ["--spring.profiles.active=sync"]
 ```
 `concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 해요. 앱 안의 재시도(고정 30초 × 3회)는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡아요. 잡 실패 이벤트와 마지막 성공 시각(25시간 초과)은 메트릭 모니터로 알려요(4.7).
-
-## 7. 테스트 구성
-
-`./gradlew test` 하나로 전부 돌아요. 자동 테스트는 Mock Supplier 모듈(9090)이나 compose의 DB·Redis에 의존하지 않고, 필요한 것을 테스트가 직접 띄워요(Docker 필요).
-
-| 층 | 대상 | 도구 | 테스트 |
-|---|---|---|---|
-| 단위 | 설정 바인딩, WebClient 구성, 인메모리 레지스트리·로더·러너, 검색 서비스의 병합·필터·부분 실패·재시도(어댑터는 가짜, 캐시는 mock) | JUnit, Mockito, AssertJ | `SupplierPropertiesTest`, `SupplierWebClientsTest`, `MappingRegistryTest`, `MappingRegistryLoaderTest`, `MappingSyncRunnerTest`, `StaySearchServiceTest` |
-| 어댑터 HTTP | 어댑터가 실제 HTTP로 호출·정규화·실패 판정 | WireMock (테스트 안에서 실행) | `SupplierAClientTest`, `SupplierBClientTest` |
-| 통합 (MySQL) | 매핑 upsert·식별자 안정성, 크론잡 델타·재시도·보류 | @SpringBootTest + Testcontainers MySQL 8.4 | `MappingMapperIntegrationTest`, `MappingSyncJobIntegrationTest` |
-| 통합 (Redis) | 캐시 쓰기·읽기·TTL·상태 키, 갱신 잡, 검색의 캐시 우선·저하 모드 | Testcontainers Redis 7.4 (테스트 JVM에서 컨테이너 하나 공유) | `AvailabilityCacheTest`, `AvailabilityRefreshJobTest`, `StaySearchServiceCacheTest` |
-| 웹 슬라이스 | 요청 파라미터·상태 코드·JSON 형태 | @WebMvcTest | `StaySearchControllerTest` |
-| 컨텍스트 | 기동 | @SpringBootTest (로컬 MySQL) | `StaySupplierIntegrationApplicationTests` |
-
-`@SpringBootTest`는 `cache.refresh-enabled=false`로 갱신 잡을 꺼요. 결과와 시나리오는 [JOURNAL "테스트 전략과 결과"](../JOURNAL.md).
