@@ -193,25 +193,4 @@ A는 HTTP 상태 코드로, B는 항상 200에 본문 `resultCode`로 실패를 
 | Deployment, 팟 N개 | 기본 | 검색 API. 기동 시 DB의 숙소·객실 타입 매핑을 인메모리로, 매일 04:30 Asia/Seoul 한 번 더 로드 |
 | CronJob `0 4 * * *`, `timeZone: Asia/Seoul` | `sync` | 매핑 갱신 잡 1회 실행. 공급사 실패 시 종료 코드 1 → `backoffLimit: 2`로 최대 3회 실행하고 upsert라 재실행이 안전해요. 수동 실행·첫 배포는 `kubectl create job --from=cronjob/<name>` |
 
-```yaml
-# 예시 매니페스트 (설계)
-apiVersion: batch/v1
-kind: CronJob
-metadata: { name: mapping-sync }
-spec:
-  schedule: "0 4 * * *"
-  timeZone: "Asia/Seoul"
-  concurrencyPolicy: Forbid
-  jobTemplate:
-    spec:
-      backoffLimit: 2                 # 공급사·DB 실패로 종료 코드 1이면 10초·20초 뒤 재실행
-      activeDeadlineSeconds: 1200     # 04:30 웹 앱 리로드 전에 끝나도록 20분 상한
-      template:
-        spec:
-          restartPolicy: Never
-          containers:
-            - name: mapping-sync
-              image: <app-image>
-              args: ["--spring.profiles.active=sync"]
-```
 `concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 해요. 앱 안의 고정 30초 × 3회 재시도는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡아요. 잡 실패 이벤트와 마지막 성공 시각이 25시간을 넘으면 메트릭 모니터로 알려요. 규칙은 4.4예요.
