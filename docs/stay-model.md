@@ -27,23 +27,28 @@
 
 ## 2. 공급사 필드 대응
 
-① 숙소 목록의 필드 대응은 아래 표예요. ② 재고·요금의 필드 대응은 1장의 요금·재고 표에 있어요.
+① 숙소 목록 응답의 어느 필드가 어느 컬럼에 들어가는지예요. A는 `GET /a/v1/hotels`, B는 `GET /b/api/properties` 응답이에요. ② 재고·요금의 대응은 [README 4.1](../README.md) 살린 정보 표에 있어요.
 
-### 2.1 숙소 목록 (①) → `SupplierHotel` · `SupplierRoomType` → 매핑 테이블
+**hotel_mapping**
 
-| 표준 필드 | 저장 컬럼 | Supplier A `GET /a/v1/hotels` | Supplier B `GET /b/api/properties` | 변환 규칙 |
-|---|---|---|---|---|
-| `supplier` | `hotel_mapping.supplier` | 상수 `A` | 상수 `B` | 어댑터가 자기 값을 넣어요 |
-| `hotelCode` | `hotel_mapping.supplier_hotel_code` | `items[].hotelCode` | `data.items[].propertyId` | 필수. 없으면 그 항목 격리 |
-| `hotelName` | `hotel_mapping.hotel_name` | `items[].hotelName` | `data.items[].propertyName` | 필수. 하루 1회 덮어써요 |
-| 없음 | `room_type_mapping.hotel_id` | 숙소 upsert가 돌려준 `id` | 같음 | 숙소를 먼저 저장해야 하므로 두 단계 |
-| `roomTypeCode` | `room_type_mapping.supplier_room_type_code` | `roomTypes[].roomTypeCode` | `rooms[].roomId` | 필수. 숙소 안에서만 유일 |
-| `roomTypeName` | `room_type_mapping.room_type_name` | `roomTypes[].roomTypeName` | `rooms[].roomName` | 필수 |
-| `maxOccupancy` | `room_type_mapping.max_occupancy` | `roomTypes[].maxOccupancy` | `rooms[].maxOccupancy` | 없거나 1 미만이면 기본값 대신 NULL로 미상 처리해 저장하고 로그. 검색 응답에서는 계약상 필수이므로 ② 응답 값 → 매핑 값 순으로 채우고, 둘 다 없으면 그 객실 타입을 응답에서 제외해요 |
-| 없음 | `room_type_mapping.active`, `hotel_mapping.active` | 응답에 없음 | 응답에 없음 | 3.2 델타 계산 결과 |
-| 버리는 것 | 없음 | 없음 | `resultCode`·`resultMessage`, 판정에만 써요 | 공급사 원본은 저장하지 않아요 |
+| 컬럼 | A | B | 규칙 |
+|---|---|---|---|
+| `supplier` | `A` | `B` | 어댑터가 자기 값을 넣어요 |
+| `supplier_hotel_code` | `items[].hotelCode` | `data.items[].propertyId` | 필수. 없으면 그 항목만 건너뛰어요 |
+| `hotel_name` | `items[].hotelName` | `data.items[].propertyName` | 필수. 하루 1회 덮어써요 |
+| `active` | 없음 | 없음 | 3.2 델타 계산 결과 |
 
-정상 0건은 A는 `items: []`, B는 `data.items: []`이고, 그 구조 자체가 없으면 깨진 응답 `INVALID_RESPONSE`로 봐요. 판정 규칙은 [architecture 4.1](architecture.md).
+**room_type_mapping**
+
+| 컬럼 | A | B | 규칙 |
+|---|---|---|---|
+| `hotel_id` | 없음 | 없음 | 숙소를 먼저 저장하고 돌려받은 `id` |
+| `supplier_room_type_code` | `roomTypes[].roomTypeCode` | `rooms[].roomId` | 필수. 숙소 안에서만 유일 |
+| `room_type_name` | `roomTypes[].roomTypeName` | `rooms[].roomName` | 필수 |
+| `max_occupancy` | `roomTypes[].maxOccupancy` | `rooms[].maxOccupancy` | 없거나 1 미만이면 NULL로 저장하고 로그 |
+| `active` | 없음 | 없음 | 3.2 델타 계산 결과 |
+
+`max_occupancy`가 NULL인 객실 타입은 검색 응답에서 ② 응답 값으로 채우고, 둘 다 없으면 응답에서 제외해요. B의 `resultCode`·`resultMessage`는 판정에만 쓰고 저장하지 않아요. 정상 0건은 A는 `items: []`, B는 `data.items: []`이고, 그 구조 자체가 없으면 깨진 응답 `INVALID_RESPONSE`로 봐요. 판정 규칙은 [architecture 4.1](architecture.md).
 
 ## 3. 매핑
 

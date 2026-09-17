@@ -39,7 +39,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash(./gradlew*)
    - `src/test/java/com/staysupplier/supplier/c/SupplierCClientTest.java` 를 WireMock 으로 작성해요. `SupplierAClientTest`(상태 코드 판정)·`SupplierBClientTest`(본문 코드 판정)가 본보기.
    - 최소 검증: 목록·재고 정규화 값, `X-Api-Key` 전송, 실패 판정(→ `FailureReason`), 타임아웃 → `TIMEOUT`, 0건 vs 구조 누락(`INVALID_RESPONSE`), 50개 분할.
 5. Mock Supplier 에 C 엔드포인트를 추가할지 정해요. 로컬 확인에만 필요하며 `mock-supplier` 모듈은 본 앱과 코드를 공유하지 않아요.
-6. 문서: `docs/stay-model.md` 2장 필드 대응표에 열 추가, `docs/architecture.md` 4.1 실패 판정에 규칙 추가, README 4.1 살린·버린 정보 표에 열 추가.
+6. 문서: `docs/stay-model.md` 2장 대응표 두 개에 열 추가, `docs/architecture.md` 4.1 실패 판정에 규칙 추가, README 4.1 살린·버린 정보 표에 열 추가.
 7. `./gradlew build` 로 전체 테스트를 돌려요.
 
 ## 확인 포인트
