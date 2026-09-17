@@ -37,7 +37,7 @@ allowed-tools: Bash(curl*)
 
 - B 는 장애여도 HTTP 200 이므로 본문 `resultCode` 를 읽어야 실패로 잡혀요(`docs/architecture.md` 4.2).
 - `error` 는 검색에서 즉시 1회 재시도 뒤 `failures` 에 들어가고, `no-response` 는 재시도 없이 3초 뒤 `failures` 에 들어가요.
-- 캐시가 차 있는 상태에서 장애를 걸면 검색은 그대로 캐시로 응답하고, 다음 갱신 바퀴(최대 5분)에서 상태 키에 실패가 기록돼 `failures` 가 붙어요(`query-cache` 3번).
+- 캐시가 차 있는 상태에서 장애를 걸면 검색은 그대로 캐시로 응답하고, 다음 갱신(최대 5분)에서 상태 키에 실패가 기록돼 `failures` 가 붙어요(`query-cache` 3번).
 
 ## 주의사항
 - 크론잡(`sync` 프로필)은 목록 API 를 쓰므로 이 모드의 영향을 받지 않아요. 목록 실패를 보려면 Mock 을 내리고 크론잡을 돌려요 → `CONNECTION`, 종료 코드 1.

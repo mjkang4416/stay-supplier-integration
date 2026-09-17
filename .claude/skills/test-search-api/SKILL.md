@@ -12,7 +12,7 @@ allowed-tools: Bash(curl*), Bash(docker compose*), Bash(python3 -m json.tool*)
 
 ## 전제
 - `run-local` 스킬로 MySQL·Redis·Mock·애플리케이션이 떠 있고 매핑이 들어가 있어요. 포트를 바꿨으면 아래 8080 을 맞춰요.
-- 캐시 창은 오늘부터 30일이라 그 안의 날짜를 써요(아래 2026-09-20\~23 은 예시). Mock 은 어떤 날짜든 예제 패턴으로 응답해요.
+- 캐시 범위은 오늘부터 30일이라 그 안의 날짜를 써요(아래 2026-09-20\~23 은 예시). Mock 은 어떤 날짜든 예제 패턴으로 응답해요.
 
 ## 실행 순서
 ```bash
@@ -37,7 +37,7 @@ curl -s -w '\n%{time_total}s\n' "$Q"
 curl -s -X POST 'http://localhost:9090/control/b/mode?value=error'
 curl -s -i "$Q"
 
-# 6. 복구 → 다음 갱신 바퀴(최대 5분)부터 다시 캐시 적중
+# 6. 복구 → 다음 갱신(최대 5분)부터 다시 캐시 적중
 curl -s -X POST 'http://localhost:9090/control/a/mode?value=normal'
 curl -s -X POST 'http://localhost:9090/control/b/mode?value=normal'
 

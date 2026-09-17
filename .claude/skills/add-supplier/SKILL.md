@@ -44,7 +44,7 @@ allowed-tools: Read, Grep, Glob, Edit, Write, Bash(./gradlew*)
 
 ## 확인 포인트
 - 고치지 않아야 하는 파일: `MappingSyncJob`, 매핑 테이블·매퍼 XML, `StaySearchService`, `AvailabilityRefreshJob`, `stay/` 표준 형태, `SupplierWebClients`, `SupplierFailures`, `ChunkedFetch`. 이 중 하나라도 고치고 있다면 공급사 전용 형식이 경계 밖으로 샌 것이에요.
-- 기동 뒤 `run-local` 3번(크론잡)을 돌리면 C 의 숙소가 `hotel_mapping` 에 `supplier = C` 로 들어가고(`query-mapping`), 갱신 잡 첫 바퀴 뒤 `stay:v1:status:C` 키가 생겨요(`query-cache`).
+- 기동 뒤 `run-local` 3번(크론잡)을 돌리면 C 의 숙소가 `hotel_mapping` 에 `supplier = C` 로 들어가고(`query-mapping`), 갱신 잡 첫 갱신 뒤 `stay:v1:status:C` 키가 생겨요(`query-cache`).
 
 ## 주의사항
 - 공급사 원본 오류 메시지는 예외의 원본 코드와 로그에만 두고 응답에 내보내지 않아요.

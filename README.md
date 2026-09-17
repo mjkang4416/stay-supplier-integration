@@ -26,9 +26,9 @@ curl 'http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026
 | ③ 통합 검색 API | 구현 | 50개 묶음 병렬 조회, 연박은 날짜별 재고의 최솟값으로 판정, 예약 불가 기본 제외, 부분 실패는 `failures`로 | [stay-search-api.md](docs/stay-search-api.md) |
 | ④ 연동 견고성 | 구현 | 연결 1초·응답 3초, 한 공급사가 죽어도 나머지로 응답 | [architecture.md 4.3\~4.4](docs/architecture.md) |
 | ⑤ Mock Supplier | 구현 | 정상·장애·무응답 모드를 API로 전환 | [architecture.md 5장](docs/architecture.md) |
-| 요금·재고 캐시 (선택) | 구현 | Redis에 5분마다 미리 채우고 검색은 Redis 우선. 비어 있으면 직접 호출 | [architecture.md 4.8](docs/architecture.md) |
-| 재시도 (선택) | 구현 | 크론잡 고정 30초 × 3회, 검색 즉시 1회, 갱신 잡 429 지수 백오프 | [architecture.md 4.6](docs/architecture.md) |
-| 정규화 실패 격리 (선택) | 부분 | 깨진 항목만 버리고 원인과 함께 로그. 격리 저장소는 없음 | [architecture.md 4.1](docs/architecture.md) |
+| 요금·재고 캐시 | 구현 | Redis에 5분마다 미리 채우고 검색은 Redis 우선. 비어 있으면 직접 호출 | [architecture.md 4.8](docs/architecture.md) |
+| 재시도 | 구현 | 크론잡 고정 30초 × 3회, 검색 즉시 1회, 갱신 잡 429 지수 백오프 | [architecture.md 4.6](docs/architecture.md) |
+| 정규화 실패 격리 | 부분 | 깨진 항목만 버리고 원인과 함께 로그. 격리 저장소는 없음 | [architecture.md 4.1](docs/architecture.md) |
 | 연동 지표·모니터, 서킷 브레이커, 갱신 잡의 다중 팟 배치 | 설계만 | 지표 정의, 알림 규칙, 한도 탐색 절차, 갱신 잡 리더 선출. 코드에는 실패 로그만 있고 갱신 잡은 팟 하나 기준 | [architecture.md 4.6\~4.7](docs/architecture.md) |
 
 ## 3. 어떻게 동작하나
@@ -63,7 +63,7 @@ flowchart LR
     SEARCH -->|"병합 + failures"| CLIENT
 ```
 
-매핑은 크론잡이 하루 한 번 MySQL에 저장하고, 요금·재고는 갱신 잡이 5분마다 Redis에 채우며, 검색은 Redis를 먼저 읽고 값이 없는 숙소만 공급사를 불러요. 단계별 기본·대안 흐름은 [architecture.md 3장](docs/architecture.md)에, 노드별 코드 출처와 스토리 재생은 [인터랙티브 로직 지도](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)에 있어요. 아래 그림을 클릭해도 열려요.
+매핑은 크론잡이 하루 한 번 MySQL에 저장하고, 요금·재고는 갱신 잡이 5분마다 Redis에 채우며, 검색은 Redis를 먼저 읽고 값이 없는 숙소만 공급사를 불러요. 예약 직전처럼 최신 값이 꼭 필요하면 요청에 `fresh=true`를 붙여 캐시를 건너뛰고 전부 직접 물을 수 있어요. 단계별 기본·대안 흐름은 [architecture.md 3장](docs/architecture.md)에, 노드별 코드 출처와 스토리 재생은 [인터랙티브 로직 지도](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)에 있어요. 아래 그림을 클릭해도 열려요.
 
 [![로직 지도 미리보기](docs/images/system-story.png)](https://mjkang4416.github.io/stay-supplier-integration/system-story.html)
 
@@ -145,7 +145,7 @@ flowchart LR
 - 대안과 반려 이유: 206·207 같은 부분 성공 상태 코드는 대부분의 클라이언트가 오류로 처리해서 반려했어요. 두 공급사가 모두 실패했을 때 200에 빈 목록을 주는 안은 "그 날짜에 예약 가능한 숙소가 없다"는 정상 응답과 구분이 안 돼서, 503과 `Retry-After`로 장애임을 알리기로 했어요.
 
 **대량 숙소 조회**
-- 설계: 어댑터가 요청당 50개인 공급사 한도를 알고 안에서 잘라 병렬 호출해요. 평소 검색은 미리 채운 Redis만 읽어 숙소 수와 무관하게 ms고, Redis가 비었을 때만 직접 호출하며 호출 예산은 공급사당 초당 4회이고 설정값이에요.
+- 설계: 어댑터가 요청당 50개인 공급사 한도를 알고 안에서 잘라 병렬 호출해요. 평소 검색은 미리 채운 Redis만 읽어 숙소 수와 무관하게 ms고, Redis가 비었을 때만 직접 호출하며 호출 한도은 공급사당 초당 4회이고 설정값이에요.
 - 이유: 초당 한도가 스펙에 없고 실제 공급사 공개값이 0.8\~10회예요. 1,000개를 3초 안에 훑으려면 초당 8회가 필요해 호출 속도로는 풀리지 않고, 검색 응답이 3초를 넘기면 이탈이 급증해요. 캐시가 완전히 비는 건 Redis 장애뿐인 예외라 그때 5초 복구를 받아들였어요.
 - 대안과 반려 이유: 초당 8회로 시작하는 안은 평소 429 위험을 키워서 반려했어요. 3초를 넘긴 숙소를 `pending`으로 표시하는 부분 응답과 날짜 거리별 갱신 주기 계층은 5,000개부터 필요해서 확장 설계로만 남겼어요.
 
@@ -161,12 +161,12 @@ flowchart LR
 - 대안과 반려 이유: 크론잡에도 지수 백오프를 쓰는 안은 새벽 배치에서 간격을 늘려 얻는 게 없어 고정 간격으로 했어요. 검색 재시도 횟수를 늘리는 안은 사용자 대기 시간이 늘어 반려했어요.
 
 **외부 연결 실패 알림과 서킷 브레이커 (설계만)**
-- 설계: 공급사·DB·Redis 연결 실패는 1건 이상이면 알리고, 같은 대상·원인은 5분 창에서 묶으며, 비율이 임계를 넘으면 긴급으로 올려요. 근거는 실패마다 남기는 공급사·원인·원본 코드 로그예요. 서킷 브레이커는 반복 실패 공급사를 끊는 조건과 복구 조건만 정했어요.
+- 설계: 공급사·DB·Redis 연결 실패는 1건 이상이면 알리고, 같은 대상·원인은 5분 안에서 묶으며, 비율이 임계를 넘으면 긴급으로 올려요. 근거는 실패마다 남기는 공급사·원인·원본 코드 로그예요. 서킷 브레이커는 반복 실패 공급사를 끊는 조건과 복구 조건만 정했어요.
 - 이유: 부분 실패를 허용하는 설계일수록 실패가 응답에서 가려져서 알림으로 보완해요.
 - 대안과 반려 이유: 지표 코드와 모니터를 저장소에 넣는 안은 외부 SaaS 설정이라 저장소에서 재현되지 않아 설계로만 남겼어요. 서킷 브레이커, 즉 계속 실패하는 공급사를 잠시 부르지 않다가 나중에 다시 시도하는 장치는 안내서가 선택 항목으로 둔 것이라, 필수인 병렬 호출·타임아웃·부분 실패·실패 판정 통일을 먼저 구현하고 끊는 조건과 복구 조건만 설계로 남겼어요.
 
 ### 4.6 요금·재고 캐시
-- 설계: Redis 공유 캐시에 미리 채워요. 웹 앱의 갱신 잡이 5분마다 인메모리 매핑의 숙소를 공급사별 50개 묶음으로 조회해 숙소당 Hash에 통째로 교체해 올려요. 키는 `stay:v1:{hotelId}`, 필드는 `{roomTypeId}:{yyyyMMdd}`, 값은 `재고|세금 포함 1박|통화|조식|최대 인원`이에요. 창은 오늘부터 30일, TTL은 주기의 3배인 15분, 호출 속도는 공급사당 초당 4회이고 429를 받으면 절반으로 줄여요. 검색은 Redis를 먼저 읽고 값이 없는 숙소만 직접 호출하며, `fresh=true`면 전부 직접 호출해요. 요금·재고는 DB에 저장하지 않아요. B는 기간 총액만 줘서 캐시에는 1박 값을 저장하고 연박 요금은 1박 값의 합으로 계산해요. B가 연박 할인을 걸면 실제와 달라질 수 있어 예약 직전 `fresh=true` 재확인으로 보정해요.
+- 설계: Redis 공유 캐시에 미리 채워요. 웹 앱의 갱신 잡이 5분마다 인메모리 매핑의 숙소를 공급사별 50개 묶음으로 조회해 숙소당 Hash에 통째로 교체해 올려요. 키는 `stay:v1:{hotelId}`, 필드는 `{roomTypeId}:{yyyyMMdd}`, 값은 `재고|세금 포함 1박|통화|조식|최대 인원`이에요. 범위는 오늘부터 30일, TTL은 주기의 3배인 15분, 호출 속도는 공급사당 초당 4회이고 429를 받으면 절반으로 줄여요. 검색은 Redis를 먼저 읽고 값이 없는 숙소만 직접 호출하며, `fresh=true`면 전부 직접 호출해요. 요금·재고는 DB에 저장하지 않아요. B는 기간 총액만 줘서 캐시에는 1박 값을 저장하고 연박 요금은 1박 값의 합으로 계산해요. B가 연박 할인을 걸면 실제와 달라질 수 있어 예약 직전 `fresh=true` 재확인으로 보정해요.
 - 이유: 인스턴스별 캐시는 여러 대일 때 효과가 희석되고 공급사 호출이 대수만큼 늘어요. 키 하나의 변경 간격은 요금 30분\~2시간, 재고 1.6\~5시간이라 분 단위인 인기 키의 검색 간격보다 길어 캐시가 성립하고, 5분 지연은 예약 직전 `fresh=true` 재확인으로 흡수해요.
 - 대안과 반려 이유: 서버 시작 시 한 번 캐싱은 재고가 이벤트마다 바뀌어 곧 틀려요. 인스턴스별 인메모리 캐시는 값이 인스턴스마다 다르고 호출이 중복돼요. 검색 시점에 채우는 캐시 어사이드는 새 기간을 처음 검색한 사용자가 초 단위를 기다려요.
 
@@ -186,7 +186,7 @@ flowchart LR
 - MySQL 초기화는 `docker compose down -v`, Redis 캐시 확인은 `docker compose exec redis redis-cli KEYS 'stay:v1:*'`예요.
 
 ### 동작 확인
-Mock은 요청한 날짜 범위대로 3일 패턴을 반복해 응답해요. 캐시 창이 오늘부터 30일이라 그 안의 날짜를 써요. 아래 날짜가 지났으면 내일부터 3박으로 바꿔요.
+Mock은 요청한 날짜 범위대로 3일 패턴을 반복해 응답해요. 캐시 범위이 오늘부터 30일이라 그 안의 날짜를 써요. 아래 날짜가 지났으면 내일부터 3박으로 바꿔요.
 ```bash
 Q='http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026-09-23&adults=2&children=0'
 curl -s "$Q"                                                            # 1. 캐시 적중: "fresh": false, 수 ms. Riverside A(429,000)·B(452,000). Namsan은 하루 재고 0이라 제외
@@ -198,7 +198,7 @@ curl -s -X POST 'http://localhost:9090/control/a/mode?value=no-response' # 4. Su
 curl -s "$Q"                                                            #    3초 뒤 200 + failures: [{ "supplier": "A", "reason": "TIMEOUT" }]
 curl -s -X POST 'http://localhost:9090/control/b/mode?value=error'      # 5. B도 장애 → 전부 실패
 curl -s -i "$Q"                                                         #    503 + Retry-After: 5
-curl -s -X POST 'http://localhost:9090/control/a/mode?value=normal'     # 6. 복구. 다음 갱신 바퀴(최대 5분)부터 다시 캐시 적중
+curl -s -X POST 'http://localhost:9090/control/a/mode?value=normal'     # 6. 복구. 다음 갱신(최대 5분)부터 다시 캐시 적중
 curl -s -X POST 'http://localhost:9090/control/b/mode?value=normal'
 curl -s "$Q&includeSoldOut=true"                                        # 7. 예약 불가(Namsan, availableRooms 0)도 포함
 curl -s "$Q&fresh=true"                                                 # 8. 캐시가 있어도 공급사에 직접 물어요 (예약 직전 재확인)

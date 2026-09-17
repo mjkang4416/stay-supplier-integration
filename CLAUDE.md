@@ -38,7 +38,7 @@
 ### 핵심 흐름
 1. 매핑: 크론잡(`sync` 프로필, 매일 04:00)이 공급사 숙소 목록을 받아 자사 숙소·객실 타입 식별자와의 매핑을 DB에 델타로 저장해요. 웹 앱은 기동 시와 04:30에 DB에서 인메모리로 올려요.
 2. 캐시: 갱신 잡이 5분마다 인메모리 매핑의 숙소를 50개씩 묶어 공급사 재고·요금 API를 호출하고, 정규화한 값을 Redis에 숙소당 Hash로 미리 채워요.
-3. 검색: 요청(날짜·인원)이 오면 Redis를 먼저 읽고, 값이 없는 숙소(첫 바퀴 전·창 밖 날짜·Redis 장애)와 `fresh=true`일 때만 WebClient로 공급사를 병렬 호출해요.
+3. 검색: 요청(날짜·인원)이 오면 Redis를 먼저 읽고, 값이 없는 숙소(첫 갱신 전·범위 밖 날짜·Redis 장애)와 `fresh=true`일 때만 WebClient로 공급사를 병렬 호출해요.
 4. 응답: 표준 모델을 내부 식별자로 바꿔 병합하고, 일부 공급사가 실패해도 나머지 결과로 응답하며 실패는 `failures`에 드러내요.
 
 ### 기술 스택
@@ -51,7 +51,7 @@
 
 ### 디렉토리 구조
 기능별 패키지. 공급사 전용 형식은 `supplier.a`, `supplier.b` 밖으로 나가지 않아요.
-- `supplier/` - `SupplierClient` 인터페이스, `Supplier` enum, `SupplierProperties`(설정), `SupplierWebClients`(공급사별 WebClient), `SupplierRateLimiter`(호출 예산), `ChunkedFetch`(50개 묶음·부분 실패), `FailureReason`·`SupplierCallException`·`SupplierFailures`(실패 판정 통일)
+- `supplier/` - `SupplierClient` 인터페이스, `Supplier` enum, `SupplierProperties`(설정), `SupplierWebClients`(공급사별 WebClient), `SupplierRateLimiter`(호출 한도), `ChunkedFetch`(50개 묶음·부분 실패), `FailureReason`·`SupplierCallException`·`SupplierFailures`(실패 판정 통일)
 - `supplier/a`, `supplier/b` - 공급사별 어댑터와 전용 응답 형식(package-private). 새 공급사는 `supplier/c`
 - `stay/` - 표준 형태. ① `SupplierHotel`·`SupplierRoomType`, ② `AvailabilityQuery`·`SupplierRoomOffer`(기간)·`SupplierDailyOffer`(날짜별)·결과 묶음
 - `mapping/` - 매핑 엔티티, MyBatis 매퍼(XML은 `resources/mapper/`), `MappingSyncJob`(크론잡 델타), `MappingSyncRunner`(sync 프로필), `MappingRegistry`·`MappingRegistryLoader`(인메모리, 기동 시·04:30 로드)
