@@ -177,24 +177,16 @@ flowchart LR
 
 ## 5. 실행 상세
 
-### 요구 사항과 포트
-- JDK 21과 Docker. JDK는 mise를 쓰면 `mise trust && mise install`로 받고, 다른 JDK 21이 PATH에 있어도 돼요. Docker는 로컬 MySQL·Redis와 테스트의 Testcontainers에 써요
-- 포트: 앱 8080, Mock 9090, MySQL 3306, Redis 6379
-- 충돌 시: MySQL은 `MYSQL_PORT=3307 docker compose up -d`와 앱 `DB_PORT=3307`, Redis는 `REDIS_PORT=6380`이고 앱도 같은 변수를 읽어요, 앱은 `./gradlew :bootRun --args='--server.port=8081'`
-
-### 실행 순서
-1장의 명령을 순서대로 실행해요.
-- 처음 띄울 때는 매핑 테이블이 비어 있으므로 `sync` 프로필 매핑 갱신 잡을 한 번 돌려 공급사 숙소 목록을 DB에 넣은 뒤 애플리케이션을 띄워요. 갱신 잡은 공급사 하나라도 실패하면 종료 코드 1로 끝나요.
+### 알아둘 것
+- 기본 포트는 앱 8080, Mock 9090, MySQL 3306, Redis 6379예요. 겹치면 MySQL은 `MYSQL_PORT=3307 docker compose up -d`와 앱 `DB_PORT=3307`, Redis는 `REDIS_PORT=6380`이고 앱도 같은 변수를 읽어요. 앱은 `./gradlew :bootRun --args='--server.port=8081'`로 바꿔요.
+- 처음 띄울 때는 매핑 테이블이 비어 있으니 `sync` 프로필 갱신 잡을 한 번 돌린 뒤 애플리케이션을 띄워요. 공급사 하나라도 실패하면 종료 코드 1로 끝나요.
 - 애플리케이션은 기동 직후 오늘부터 30일치 요금·재고를 Redis에 채우는 데 약 10초가 걸리고, 그 뒤 5분마다 다시 채워요.
-- 본 앱과 Mock Supplier 두 모듈이라 본 앱은 `:bootRun`, Mock은 `:mock-supplier:bootRun`처럼 모듈을 지정해요. `./gradlew bootRun`처럼 모듈 없이 실행하면 Mock 모듈의 bootRun까지 같이 실행돼요.
-- API 문서는 애플리케이션이 떠 있을 때 http://localhost:8080/swagger-ui.html 에서 Swagger UI로 볼 수 있어요. Mock Supplier 상세는 [architecture.md 5장](docs/architecture.md).
-
-### 로컬 MySQL·Redis
-- MySQL 8.4: `compose.yaml`로 띄우고 설정은 `docker/mysql/conf.d/my.cnf`예요. DB `stay_supplier`, 로컬 개발용 계정 `stay`/`stay`, `utf8mb4`, UTC. 데이터는 `mysql-data` 볼륨에 유지되고 `docker compose down -v`로 초기화해요
-- Redis 7.4: `redis:7.4-alpine` 이미지이고 요금·재고 캐시만 담고 볼륨은 없어요. 확인은 `docker compose exec redis redis-cli KEYS 'stay:v1:*'`, 비우기는 `docker compose exec redis redis-cli FLUSHALL`. Redis가 없어도 애플리케이션은 뜨고 검색은 공급사를 직접 부르는 저하 모드로 동작해요
+- 모듈이 둘이라 본 앱은 `:bootRun`, Mock은 `:mock-supplier:bootRun`으로 지정해요.
+- Swagger UI는 애플리케이션이 떠 있을 때 http://localhost:8080/swagger-ui.html 에서 열려요.
+- MySQL 초기화는 `docker compose down -v`, Redis 캐시 확인은 `docker compose exec redis redis-cli KEYS 'stay:v1:*'`예요.
 
 ### 동작 확인
-Mock은 요청한 날짜 범위대로 3일 패턴을 반복해 응답해요. 9/1\~9/4를 요청하면 스펙 예제와 같은 값이 나와요. 캐시 창은 오늘부터 30일이므로 캐시 동작을 보려면 그 안의 날짜를 써요. 아래는 2026-09-20\~23 기준이고, 지났으면 내일부터 3박으로 바꿔요. 내일 날짜는 macOS `date -v+1d +%F`, Linux `date -d '+1 day' +%F`로 얻어요. 2026-09-01\~04 같은 창 밖 날짜도 검색은 되지만 캐시 없이 직접 호출해요.
+Mock은 요청한 날짜 범위대로 3일 패턴을 반복해 응답해요. 캐시 창이 오늘부터 30일이라 그 안의 날짜를 써요. 아래 날짜가 지났으면 내일부터 3박으로 바꿔요.
 ```bash
 Q='http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026-09-23&adults=2&children=0'
 curl -s "$Q"                                                            # 1. 캐시 적중: "fresh": false, 수 ms. Riverside A(429,000)·B(452,000). Namsan은 하루 재고 0이라 제외
@@ -211,9 +203,8 @@ curl -s -X POST 'http://localhost:9090/control/b/mode?value=normal'
 curl -s "$Q&includeSoldOut=true"                                        # 7. 예약 불가(Namsan, availableRooms 0)도 포함
 curl -s "$Q&fresh=true"                                                 # 8. 캐시가 있어도 공급사에 직접 물어요 (예약 직전 재확인)
 ```
-캐시가 차 있는 상태에서 A를 장애로 두고 5분 기다리면 갱신 잡이 A 상태 키에 실패를 기록하고, 캐시 응답에도 `failures: [{ "supplier": "A", "reason": "UNAVAILABLE" }]`가 붙어요. A 값은 TTL 15분까지 유지돼요.
 
-크론잡의 실패 처리는 Mock을 내린 채 `./gradlew :bootRun --args='--spring.profiles.active=sync'`를 돌리면 볼 수 있어요. 연결 실패를 30초 간격으로 3회 재시도한 뒤 두 공급사 모두 건너뛰고 종료 코드 1로 끝나며, 기존 매핑은 그대로 남아요.
+크론잡의 실패 처리는 Mock을 내린 채 `./gradlew :bootRun --args='--spring.profiles.active=sync'`를 돌리면 볼 수 있어요. 30초 간격으로 3회 재시도한 뒤 두 공급사 모두 건너뛰고 종료 코드 1로 끝나며, 기존 매핑은 그대로 남아요.
 
 ## 6. 문서
 - [docs/architecture.md](docs/architecture.md): 아키텍처. 전체 구성, 유스케이스, 공급사 연동, Mock Supplier, 실행·테스트 구성
