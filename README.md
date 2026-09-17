@@ -25,7 +25,7 @@ curl 'http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026
 | ② Supplier 어댑터 | 구현 | 공급사별 형식은 어댑터 패키지 안에만. A의 HTTP 상태와 B의 `resultCode`를 같은 실패 사유 8가지로 통일 | [architecture.md 3장](docs/architecture.md) |
 | ③ 통합 검색 API | 구현 | 50개 묶음 병렬 조회, 연박은 날짜별 재고의 최솟값으로 판정, 예약 불가 기본 제외, 부분 실패는 `failures`로 | [stay-search-api.md](docs/stay-search-api.md) |
 | ④ 연동 견고성 | 구현 | 연결 1초·응답 3초, 한 공급사가 죽어도 나머지로 응답 | [architecture.md 3장·4.3](docs/architecture.md) |
-| ⑤ Mock Supplier | 구현 | 정상·장애·무응답 모드를 API로 전환 | [architecture.md 5장](docs/architecture.md) |
+| ⑤ Mock Supplier | 구현 | 정상·장애·무응답 모드를 API로 전환 | [5장 동작 확인](#5-실행-상세) |
 | 요금·재고 캐시 | 구현 | Redis에 5분마다 미리 채우고 검색은 Redis 우선. 비어 있으면 직접 호출 | [architecture.md 4.5](docs/architecture.md) |
 | 재시도 | 구현 | 크론잡 고정 30초 × 3회, 검색 즉시 1회, 갱신 잡 429 지수 백오프 | [architecture.md 4.3](docs/architecture.md) |
 | 정규화 실패 격리 | 부분 | 깨진 항목만 버리고 원인과 함께 로그. 격리 저장소는 없음 | [architecture.md 3장](docs/architecture.md) |
@@ -69,7 +69,7 @@ flowchart LR
 
 ## 4. 설계 결정
 
-결정마다 설계 → 이유 → 검토한 대안과 반려 이유 순서로 적어요. 선택지 비교의 전체 과정은 [JOURNAL.md](JOURNAL.md)의 "설계 의사결정 기록"에 있어요.
+결정마다 설계 → 이유 → 검토한 대안과 반려 이유 순서로 적어요. 선택지 비교의 전체 과정은 [JOURNAL.md 1장](JOURNAL.md)에 있어요.
 
 ### 4.1 표준 숙박 상품 모델
 
@@ -207,9 +207,9 @@ curl -s "$Q&fresh=true"                                                 # 8. 캐
 크론잡의 실패 처리는 Mock을 내린 채 `./gradlew :bootRun --args='--spring.profiles.active=sync'`를 돌리면 볼 수 있어요. 로그에 `mapping sync retry supplier=A attempt=1..3`이 30초 간격으로 찍힌 뒤 `mapping sync skipped supplier=A reason=CONNECTION (existing mapping kept)`와 `exitCode=1`이 나오고, `hotel_mapping`의 행은 그대로예요.
 
 ## 6. 문서
-- [docs/architecture.md](docs/architecture.md): 아키텍처. 전체 구성, 유스케이스, 공급사 연동, Mock Supplier, 운영 구성
+- [docs/architecture.md](docs/architecture.md): 아키텍처. 전체 구성, 유스케이스, 공급사 연동 규칙, 운영 구성
 - [docs/stay-model.md](docs/stay-model.md): 통합 모델 설계. 표준 모델, 공급사 필드 대응, 매핑
 - [docs/stay-search-api.md](docs/stay-search-api.md): API 명세
 - [docs/domain-research.md](docs/domain-research.md): 도메인 리서치 원페이저. 공급사 구조, 공급사 간 표현 차이
 - [docs/system-story.html](https://mjkang4416.github.io/stay-supplier-integration/system-story.html): 인터랙티브 로직 지도. 존·노드·스토리 재생, GitHub Pages로 열려요
-- [JOURNAL.md](JOURNAL.md): 설계 의사결정 기록, 진행 기록, 테스트 전략과 결과, AI 활용 기록
+- [JOURNAL.md](JOURNAL.md): 설계 의사결정 과정과 폐기한 대안, 일자별 진행과 문제 해결, 테스트 전략과 결과, AI 활용 기록

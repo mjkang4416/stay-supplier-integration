@@ -184,24 +184,7 @@ flowchart LR
 - 주기와 용량: 5분. 숙소 1,000개면 갱신 한 번에 A 20회 + B 600회 = 620회라 초당 4회로 2.6분. 5,000개부터는 날짜 거리별 계층이 필요해서 설계만. 숙소당 약 6KB라 10,000개에 60MB.
 - 설정 키: `supplier.rate-limit.per-second`, `cache.refresh-interval`, `cache.window-days`, `cache.ttl-multiplier`, `cache.rate-limit-*`.
 
-## 5. Mock Supplier
-
-공급사 A·B의 API를 흉내 내는 별도 모듈이에요. 채점 대상이 아니라 연동 동작을 검증하는 수단이라 최소로 구현했고, 본 앱과 코드를 공유하지 않아요. 숙소 목록은 `src/main/resources/responses/*.json`의 고정 데이터이고, 재고·요금은 요청한 날짜마다 부록 예제의 3일 패턴을 기준일 2026-09-01부터 반복해 만들어요. 9/1\~9/4를 요청하면 예제와 같은 값이 나와요. 모드는 재고·요금 API에만 걸리고 숙소 목록 API는 항상 정상이에요.
-
-
-| 모드 | Supplier A 재고·요금 응답 | Supplier B 재고·요금 응답 |
-|---|---|---|
-| `normal`, 기본 | HTTP 200 + 정상 본문 | HTTP 200 + `resultCode: "0000"` |
-| `error` | HTTP 503 + `{"error":"SERVICE_UNAVAILABLE"}` | HTTP 200 + `{"resultCode":"E503","data":null}` |
-| `no-response` | 응답을 보내지 않고 10분 대기 | 같음 |
-
-```bash
-curl -X POST 'http://localhost:9090/control/a/mode?value=error'         # A 장애
-curl -X POST 'http://localhost:9090/control/b/mode?value=no-response'   # B 무응답
-curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # A 복구
-```
-
-## 6. 운영 구성 (설계)
+## 5. 운영 구성 (설계)
 같은 이미지를 두 워크로드로 배포해요.
 
 | 워크로드 | 프로필 | 역할 |
