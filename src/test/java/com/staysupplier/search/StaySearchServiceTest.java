@@ -3,10 +3,13 @@ package com.staysupplier.search;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.staysupplier.cache.AvailabilityCache;
 import com.staysupplier.mapping.HotelMapping;
 import com.staysupplier.mapping.HotelMappingMapper;
 import com.staysupplier.mapping.MappingRegistry;
@@ -23,6 +26,7 @@ import com.staysupplier.supplier.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
 
@@ -51,6 +55,9 @@ class StaySearchServiceTest {
 
 	private final MappingRegistry registry = new MappingRegistry(this.hotelMappingMapper, this.roomTypeMappingMapper);
 
+	/** 캐시가 비어 있는 상태(첫 바퀴 전). 캐시 적중 경로는 StaySearchServiceCacheTest 에서 실제 Redis 로 검증한다 */
+	private final AvailabilityCache cache = mock(AvailabilityCache.class);
+
 	@BeforeEach
 	void loadMapping() {
 		given(this.hotelMappingMapper.findAllActive()).willReturn(List.of(hotel(1L, Supplier.A, "A-10023", "Riverside Hotel Seoul"),
@@ -58,11 +65,13 @@ class StaySearchServiceTest {
 		given(this.roomTypeMappingMapper.findAllActive()).willReturn(List.of(roomType(11L, 1L, "DLX-TWN", "Deluxe Twin", 2),
 				roomType(12L, 2L, "STD-DBL", "Standard Double", 2), roomType(13L, 3L, "R-401", "Deluxe Twin Room", null)));
 		this.registry.reload();
+		given(this.cache.read(any(), any())).willReturn(Map.of());
+		given(this.cache.status(any())).willReturn(Optional.empty());
 	}
 
 	private StaySearchService service(StubClient... clients) {
 		return new StaySearchService(List.of(clients), this.registry,
-				new SearchProperties(30, 1, Duration.ofMillis(1)));
+				new SearchProperties(30, 1, Duration.ofMillis(1)), this.cache);
 	}
 
 	private static StaySearchRequest request(int adults, boolean includeSoldOut) {

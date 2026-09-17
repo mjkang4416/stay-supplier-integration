@@ -23,6 +23,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-webclient")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	implementation("org.mybatis.spring.boot:mybatis-spring-boot-starter:4.0.1")
+	implementation("org.springframework.boot:spring-boot-starter-data-redis")
 	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0")
 	runtimeOnly("com.mysql:mysql-connector-j")
 	testImplementation("org.springframework.boot:spring-boot-starter-validation-test")
@@ -33,6 +34,7 @@ dependencies {
 	testImplementation("org.testcontainers:testcontainers-mysql")
 	testImplementation("org.testcontainers:testcontainers-junit-jupiter")
 	testImplementation("org.wiremock:wiremock-standalone:3.13.2")
+	testImplementation("com.redis:testcontainers-redis")
 	testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

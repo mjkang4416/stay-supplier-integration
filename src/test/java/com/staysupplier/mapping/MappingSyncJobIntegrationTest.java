@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * 크론잡 델타 반영을 실제 MySQL 에서 검증한다: 추가·변경·사라짐, 실패 공급사 건너뛰기, 재시도, 비활성화 보류.
  */
-@SpringBootTest
+@SpringBootTest(properties = "cache.refresh-enabled=false")
 @Testcontainers
 class MappingSyncJobIntegrationTest {
 

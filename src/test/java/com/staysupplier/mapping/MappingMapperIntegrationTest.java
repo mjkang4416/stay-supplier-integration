@@ -19,7 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 매핑 테이블의 핵심 규칙을 실제 MySQL 에서 검증한다.
  * 같은 공급사 코드는 다시 저장해도 같은 내부 식별자를 받고, 비활성화는 행을 지우지 않는다.
  */
-@SpringBootTest
+@SpringBootTest(properties = "cache.refresh-enabled=false")
 @Testcontainers
 class MappingMapperIntegrationTest {
 
