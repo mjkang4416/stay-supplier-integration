@@ -121,7 +121,7 @@ public class StaySearchService {
 			stays.add(new Stay(hotel.id(), hotel.name(), hotel.supplier(), roomTypes));
 		});
 		return new StaySearchResponse(request.checkIn(), request.checkOut(), request.nights(), request.adults(),
-				request.children(), stays, failures, List.of(), servedFromCache == 0);
+				request.children(), stays, failures, servedFromCache == 0);
 	}
 
 	/**

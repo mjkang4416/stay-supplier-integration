@@ -39,7 +39,6 @@
 | `roomTypes[].price.taxIncluded` | boolean | 항상 true (요금 기준) |
 | `roomTypes[].price.breakfastIncluded` | boolean | 요금에 조식이 포함되는지. 같은 객실도 공급사마다 다를 수 있어 비교 조건 |
 | `failures[]` | array | 실패한 공급사. `supplier`, `reason`(architecture 4.2의 `FailureReason`), `affectedHotels`(값을 못 받은 숙소 수) |
-| `pending[]` | long[] | 응답 예산 안에 값을 채우지 못한 숙소 식별자 (설계만, 현재는 항상 비어 있음) |
 | `fresh` | boolean | 공급사에 직접 물어 만든 응답이면 true, 캐시에서 한 숙소라도 읽었으면 false |
 
 ### 1.3 부분 실패 표현
@@ -66,7 +65,7 @@
       "roomTypes": [ { "roomTypeId": 3, "roomTypeName": "Deluxe Twin Room", "maxOccupancy": 2, "availableRooms": 1,
                        "price": { "total": 452000, "currency": "KRW", "taxIncluded": true, "breakfastIncluded": true } } ] }
   ],
-  "failures": [], "pending": [], "fresh": true
+  "failures": [], "fresh": true
 }
 ```
 
@@ -76,7 +75,7 @@
   "checkIn": "2026-09-01", "checkOut": "2026-09-04", "nights": 3, "adults": 2, "children": 0,
   "stays": [ { "hotelId": 3, "hotelName": "Riverside Hotel Seoul", "supplier": "B", "roomTypes": [ "..." ] } ],
   "failures": [ { "supplier": "A", "reason": "TIMEOUT", "affectedHotels": 2 } ],
-  "pending": [], "fresh": true
+  "fresh": true
 }
 ```
 
