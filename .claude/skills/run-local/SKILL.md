@@ -36,7 +36,7 @@ allowed-tools: Bash(docker compose*), Bash(./gradlew*), Bash(curl*)
 
 ## 확인 포인트
 - 3번 종료 코드 0 이면 전부 성공, 1 이면 공급사 하나 이상 실패예요. 들어간 매핑은 `query-mapping` 스킬로 봐요.
-- 4번 기동 직후 로그 `cache refresh supplier=A hotels=2 …` 가 찍히고 약 10초 뒤 오늘~+30일 요금·재고가 Redis 에 차요. `query-cache` 스킬로 봐요.
+- 4번 기동 직후 로그 `cache refresh supplier=A hotels=2 …` 가 찍히고 약 10초 뒤 오늘\~+30일 요금·재고가 Redis 에 차요. `query-cache` 스킬로 봐요.
 - Swagger UI: http://localhost:8080/swagger-ui.html. 검색 확인은 `test-search-api` 스킬.
 
 ## 주의사항

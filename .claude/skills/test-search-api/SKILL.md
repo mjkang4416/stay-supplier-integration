@@ -4,7 +4,7 @@ description: |
   통합 검색 API 를 캐시 적중 → 저하 모드 → 부분 실패 → 타임아웃 → 전부 실패 → 매진 포함 → 잘못된 요청 → 실시간 재확인 순서로 curl 로 확인해요.
   Triggers: "검색 확인해줘", "검색 API 테스트", "부분 실패 확인", "503 확인", "fresh=true 확인", "curl 로 검색"
   Do NOT use for: 서버 기동(run-local), Mock 모드만 바꾸기(mock-fault), 자동화 테스트 실행(`./gradlew test`)
-argument-hint: "시나리오 번호 (1~8, 생략하면 전부)"
+argument-hint: "시나리오 번호 (1\~8, 생략하면 전부)"
 allowed-tools: Bash(curl*), Bash(docker compose*), Bash(python3 -m json.tool*)
 ---
 
@@ -12,7 +12,7 @@ allowed-tools: Bash(curl*), Bash(docker compose*), Bash(python3 -m json.tool*)
 
 ## 전제
 - `run-local` 스킬로 MySQL·Redis·Mock·애플리케이션이 떠 있고 매핑이 들어가 있어요. 포트를 바꿨으면 아래 8080 을 맞춰요.
-- 캐시 창은 오늘부터 30일이라 그 안의 날짜를 써요(아래 2026-09-20~23 은 예시). Mock 은 어떤 날짜든 예제 패턴으로 응답해요.
+- 캐시 창은 오늘부터 30일이라 그 안의 날짜를 써요(아래 2026-09-20\~23 은 예시). Mock 은 어떤 날짜든 예제 패턴으로 응답해요.
 
 ## 실행 순서
 ```bash
@@ -58,5 +58,5 @@ curl -s "$Q&fresh=true" | python3 -m json.tool
 - 캐시가 차 있는 상태에서 A 를 장애로 두고 5분 기다리면 갱신 잡이 상태 키에 실패를 기록해 캐시 응답에도 `failures` 가 붙어요(`query-cache` 스킬 3번).
 
 ## 주의사항
-- 3~5번은 캐시가 비어 있어야 검색이 공급사를 직접 불러요. 순서를 지키거나 2번을 먼저 해요.
+- 3\~5번은 캐시가 비어 있어야 검색이 공급사를 직접 불러요. 순서를 지키거나 2번을 먼저 해요.
 - 끝나면 6번으로 복구해요. 모드는 Mock 메모리에만 있어 Mock 재시작으로도 돌아와요.

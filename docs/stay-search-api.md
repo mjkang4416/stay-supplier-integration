@@ -12,7 +12,7 @@
 | 파라미터 | 타입 | 필수 | 설명 | 검증 |
 |---|---|---|---|---|
 | `checkIn` | `YYYY-MM-DD` | 예 | 체크인일 | 날짜 형식 |
-| `checkOut` | `YYYY-MM-DD` | 예 | 체크아웃일. 숙박일에 포함되지 않아요 (9/1~9/4 = 3박) | `checkIn`보다 뒤, 박수 ≤ 30 (`search.max-nights`) |
+| `checkOut` | `YYYY-MM-DD` | 예 | 체크아웃일. 숙박일에 포함되지 않아요 (9/1\~9/4 = 3박) | `checkIn`보다 뒤, 박수 ≤ 30 (`search.max-nights`) |
 | `adults` | int | 예 | 성인 수 | 1 이상 |
 | `children` | int | 아니요 (기본 0) | 아동 수 | 0 이상 |
 | `fresh` | boolean | 아니요 (기본 false) | true면 캐시를 건너뛰고 공급사에 직접 물어요 (예약 직전 재확인) | |
@@ -53,7 +53,7 @@
 
 ### 1.5 예시
 
-정상 (Mock 예제 데이터, 9/1~9/4 성인 2). Namsan Garden Stay는 9/2 재고가 0이라 빠졌어요.
+정상 (Mock 예제 데이터, 9/1\~9/4 성인 2). Namsan Garden Stay는 9/2 재고가 0이라 빠졌어요.
 ```json
 {
   "checkIn": "2026-09-01", "checkOut": "2026-09-04", "nights": 3, "adults": 2, "children": 0,
@@ -85,7 +85,7 @@
 인메모리 매핑(`MappingRegistry`)의 active 숙소 전체가 대상이에요. 먼저 Redis에서 숙소별 (객실 타입 × 숙박일) 필드를 파이프라인으로 읽고, 값이 없는 숙소만 공급사별로 묶어 `fetchAvailability`를 불러요(`fresh=true`면 전부). 갱신 잡의 마지막 시도가 실패한 공급사는 `failures`에 그 원인으로 표시해요. 공급사 한도(요청당 50개)는 어댑터가 알고 안에서 잘라 병렬 호출하며, 묶음 일부가 실패하면 성공한 항목과 실패 묶음을 함께 돌려줘요. active 숙소가 없는 공급사는 부르지 않아요. 공급사 간 호출은 병렬이고, 실패는 공급사 단위로 가둔 뒤 병합해요([architecture 4.4](architecture.md)).
 
 ### 2.2 연박 예약 가능 객실 수 판정
-`availableRooms` = 요청 기간(체크인일 ~ 체크아웃 전날)의 날짜별 `remainingRooms` 중 최솟값. 하루라도 0이면 0이고 예약 불가예요. 요금은 A는 날짜별 (nightlyRate + taxAmount)의 합, B는 totalPrice 그대로. 응답이 객실 타입 단위라 호실 배정·업그레이드·분할 예약은 다루지 않아요.
+`availableRooms` = 요청 기간(체크인일 \~ 체크아웃 전날)의 날짜별 `remainingRooms` 중 최솟값. 하루라도 0이면 0이고 예약 불가예요. 요금은 A는 날짜별 (nightlyRate + taxAmount)의 합, B는 totalPrice 그대로. 응답이 객실 타입 단위라 호실 배정·업그레이드·분할 예약은 다루지 않아요.
 
 ### 2.3 예약 불가 상품 처리
 `availableRooms == 0`인 객실 타입은 기본으로 응답에서 빼요. 객실 타입이 모두 빠진 숙소도 빼요. `includeSoldOut=true`면 `availableRooms: 0`으로 포함해요. 근거는 [README 4.4](../README.md).
