@@ -29,7 +29,7 @@ curl 'http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026
 | 요금·재고 캐시 (선택) | 구현 | Redis에 5분마다 미리 채우고 검색은 Redis 우선. 비어 있으면 직접 호출 | [architecture.md 4.8](docs/architecture.md) |
 | 재시도 (선택) | 구현 | 크론잡 고정 30초 × 3회, 검색 즉시 1회, 갱신 잡 429 지수 백오프 | [architecture.md 4.6](docs/architecture.md) |
 | 정규화 실패 격리 (선택) | 부분 | 깨진 항목만 버리고 원인과 함께 로그. 격리 저장소는 없음 | [architecture.md 4.1](docs/architecture.md) |
-| 연동 지표·모니터, 서킷 브레이커 | 설계만 | 지표 정의, 알림 규칙, 한도 탐색 절차. 코드에는 실패 로그만 | [architecture.md 4.6\~4.7](docs/architecture.md) |
+| 연동 지표·모니터, 서킷 브레이커, 갱신 잡의 다중 팟 배치 | 설계만 | 지표 정의, 알림 규칙, 한도 탐색 절차, 갱신 잡 리더 선출. 코드에는 실패 로그만 있고 갱신 잡은 팟 하나 기준 | [architecture.md 4.6\~4.7](docs/architecture.md) |
 
 ## 3. 어떻게 동작하나
 
@@ -204,7 +204,7 @@ curl -s "$Q&includeSoldOut=true"                                        # 7. 예
 curl -s "$Q&fresh=true"                                                 # 8. 캐시가 있어도 공급사에 직접 물어요 (예약 직전 재확인)
 ```
 
-크론잡의 실패 처리는 Mock을 내린 채 `./gradlew :bootRun --args='--spring.profiles.active=sync'`를 돌리면 볼 수 있어요. 30초 간격으로 3회 재시도한 뒤 두 공급사 모두 건너뛰고 종료 코드 1로 끝나며, 기존 매핑은 그대로 남아요.
+크론잡의 실패 처리는 Mock을 내린 채 `./gradlew :bootRun --args='--spring.profiles.active=sync'`를 돌리면 볼 수 있어요. 로그에 `mapping sync retry supplier=A attempt=1..3`이 30초 간격으로 찍힌 뒤 `mapping sync skipped supplier=A reason=CONNECTION (existing mapping kept)`와 `exitCode=1`이 나오고, `hotel_mapping`의 행은 그대로예요.
 
 ## 6. 문서
 - [docs/architecture.md](docs/architecture.md): 아키텍처. 전체 구성, 유스케이스, 공급사 연동, Mock Supplier, 실행·테스트 구성
