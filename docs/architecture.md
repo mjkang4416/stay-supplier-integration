@@ -130,7 +130,9 @@ flowchart LR
 
 ### 4.1 실패 판정
 
-| `FailureReason` | Supplier A HTTP 상태 | Supplier B `resultCode` | 공통 전송 계층 |
+A는 HTTP 상태 코드로, B는 항상 200에 본문 `resultCode`로 실패를 알려요. 둘과 응답을 아예 못 받은 경우를 같은 `FailureReason` 하나로 바꿔서, 크론잡·갱신 잡·검색은 이 원인만 보고 재시도와 알림을 정해요.
+
+| `FailureReason` | Supplier A HTTP 상태 | Supplier B `resultCode` | 응답을 못 받았을 때, A·B 공통 |
 |---|---|---|---|
 | `INVALID_REQUEST` | 400 `INVALID_DATE_RANGE`·`INVALID_PARAMETER`·`TOO_MANY_HOTEL_CODES`, 그 밖의 4xx | `E400` | |
 | `UNAUTHORIZED` | 401 | `E401` | |
