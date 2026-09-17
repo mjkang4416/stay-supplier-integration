@@ -448,7 +448,7 @@
       pts:['<code>mapping.reload.cron=0 30 4 * * *</code>, <code>zone=Asia/Seoul</code>','실패 시 error 로그(loadedAt 포함) 후 <code>mapping.reload.retry-delay</code>(5m) 뒤 1회 더','수동으로 크론잡을 즉시 돌린 경우 04:30 이나 재기동 전까지 옛 매핑을 써요'],
       src:'src/main/java/com/staysupplier/mapping/MappingRegistryLoader.java:43-60'},
     j_refresh:{k:'boot',t:'갱신 잡 (5분마다)',en:'AvailabilityRefreshJob.refresh',
-      sum:'인메모리 매핑의 숙소를 공급사별로 넘겨 오늘~+30일 날짜별 값을 받아요. 캐시를 쓰는 곳은 여기뿐이에요.',
+      sum:'매핑은 다시 읽지 않아요. 인메모리 매핑에 있는 숙소의 요금·재고만 공급사에서 오늘~+30일 날짜별로 다시 받아 Redis 에 저장해요. 요금·재고는 DB 에 없고 호출할 때마다 바뀌는 값이라 5분마다 새로 받아요. 캐시에 값을 저장하는 곳은 여기뿐이고 검색은 읽기만 해요. 팟이 여러 대면 refresh 프로필의 전용 팟 1대에서만 돌아요.',
       pts:['창: <code>LocalDate.now(clock)</code> ~ <code>+cache.window-days</code>(30)','A 는 30일 범위 한 번, B 는 기간 총액만 주므로 날짜마다 1박씩 호출 (<code>fetchDailyAvailability</code>)','429 만 지수 백오프 1→2→4… 초, 60초 상한, 최대 5회. 다른 실패는 다음 주기','실패 공급사는 error 로그 + 상태 키에 사유. 값은 TTL 까지 유지'],
       src:'src/main/java/com/staysupplier/cache/AvailabilityRefreshJob.java:56-115'},
     j_store:{k:'boot',t:'Hash 통째 교체 + 상태 키',en:'AvailabilityCache.write · recordStatus',

@@ -20,7 +20,7 @@ import com.staysupplier.mapping.MappingRegistry;
 import com.staysupplier.supplier.SupplierClient;
 
 /**
- * 요금·재고 캐시 구성. 갱신 잡은 웹 앱에서만 돌고(sync 프로필 제외), 테스트는 cache.refresh-enabled=false 로 끈다.
+ * 요금·재고 캐시 구성. 갱신 잡은 sync 프로필을 뺀 곳(웹 앱, refresh 전용 팟)에서 돌고, 웹 팟 여러 대일 때와 테스트는 cache.refresh-enabled=false 로 끈다.
  */
 @Configuration(proxyBeanMethods = false)
 @EnableConfigurationProperties(CacheProperties.class)

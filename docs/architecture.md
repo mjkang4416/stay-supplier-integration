@@ -15,7 +15,7 @@ flowchart LR
     end
     subgraph app["본 앱 (:8080, Spring MVC)"]
         REG["MappingRegistry<br/>인메모리 매핑"]
-        REFRESH["AvailabilityRefreshJob<br/>기동 직후 · 5분마다"]
+        REFRESH["AvailabilityRefreshJob<br/>기동 직후 · 5분마다<br/>다중 팟은 refresh 프로필 팟 1대"]
         SEARCH["StaySearchService"]
     end
     DB[("MySQL (:3306)<br/>hotel_mapping · room_type_mapping")]
@@ -170,7 +170,7 @@ A는 HTTP 상태 코드로, B는 항상 200에 본문 `resultCode`로 실패를 
 
 ### 4.5 요금·재고 캐시
 
-구현 상태: 갱신 잡 `AvailabilityRefreshJob`, 저장소 `AvailabilityCache`, 검색의 Redis 우선 읽기, 호출 한도 `SupplierRateLimiter`는 구현. 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트, readiness 연동, 갱신 잡 리더 선출은 설계만. 결정과 이유는 [README 4.6](../README.md)에 있어요.
+구현 상태: 갱신 잡 `AvailabilityRefreshJob`, 저장소 `AvailabilityCache`, 검색의 Redis 우선 읽기, 호출 한도 `SupplierRateLimiter`는 구현. 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트, readiness 연동은 설계만. 팟이 여러 대면 `refresh` 프로필의 갱신 전용 팟 1대가 갱신 잡을 맡고 웹 팟은 `cache.refresh-enabled=false`로 꺼요. 배치는 5장. 결정과 이유는 [README 4.6](../README.md)에 있어요.
 
 ```
 키       stay:v1:{hotelId}              숙소당 Hash 하나. TTL = 주기 × 3 = 15분
@@ -190,7 +190,8 @@ A는 HTTP 상태 코드로, B는 항상 200에 본문 `resultCode`로 실패를 
 
 | 워크로드 | 프로필 | 역할 |
 |---|---|---|
-| Deployment, 팟 N개 | 기본 | 검색 API. 기동 시 DB의 숙소·객실 타입 매핑을 인메모리로, 매일 04:30 Asia/Seoul 한 번 더 로드 |
+| Deployment, 팟 N개 | 기본, `cache.refresh-enabled=false` | 검색 API. 기동 시 DB의 숙소·객실 타입 매핑을 인메모리로, 매일 04:30 Asia/Seoul 한 번 더 로드. 갱신 잡은 끄고 Redis만 읽어요 |
+| Deployment, 팟 1개 | `refresh` | 요금·재고 갱신 잡. 웹 서버 없이 떠서 매핑을 인메모리로 올리고 5분마다 Redis를 채워요. 이 팟이 죽으면 값은 TTL 15분까지 남고 그 뒤 검색은 직접 호출로 넘어가요. 팟이 하나뿐인 로컬은 기본 프로필이 검색과 갱신을 같이 해요 |
 | CronJob `0 4 * * *`, `timeZone: Asia/Seoul` | `sync` | 매핑 갱신 잡 1회 실행. 공급사 실패 시 종료 코드 1 → `backoffLimit: 2`로 최대 3회 실행하고 upsert라 재실행이 안전해요. 수동 실행·첫 배포는 `kubectl create job --from=cronjob/<name>` |
 
 `concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 해요. 앱 안의 고정 30초 × 3회 재시도는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡아요. 잡 실패 이벤트와 마지막 성공 시각이 25시간을 넘으면 메트릭 모니터로 알려요. 규칙은 4.4예요.

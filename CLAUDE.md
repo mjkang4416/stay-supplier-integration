@@ -18,6 +18,7 @@
 - `./gradlew build` - 컴파일과 전체 테스트
 - `./gradlew :bootRun` - 애플리케이션 실행 (기본 포트 8080). `:` 없이 실행하면 Mock 모듈까지 같이 뜨므로 반드시 붙여요
 - `./gradlew :bootRun --args='--spring.profiles.active=sync'` - 매핑 갱신 잡 1회 실행 후 종료 (처음 띄울 때 한 번 필요)
+- `./gradlew :bootRun --args='--spring.profiles.active=refresh'` - 갱신 전용 팟 모드. 웹 서버 없이 5분마다 요금·재고 갱신 잡만 돌려요 (다중 팟 운영용, 로컬에서는 불필요)
 - `./gradlew :mock-supplier:bootRun` - Mock Supplier 실행 (포트 9090, 별도 터미널)
 
 ### 테스트
