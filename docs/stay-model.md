@@ -4,17 +4,50 @@
 
 ## 1. 표준 숙박 상품 모델
 
-### 1.1 숙소
-<!-- 필드, 타입, 의미 -->
+단위는 숙소 → 객실 타입 → (날짜별) 재고·요금이다. 어댑터가 공급사 응답을 이 형태로 바꾸고(`stay` 패키지), 식별자는 공급사 코드 그대로 두며 내부 식별자는 매핑(3장)이 붙인다. 검색 응답의 형태는 [stay-search-api.md](stay-search-api.md).
 
-### 1.2 객실 타입
-<!-- 필드, 타입, 의미 -->
+### 1.1 숙소 (`SupplierHotel`)
+
+| 필드 | 타입 | 의미 |
+|---|---|---|
+| `supplier` | `A` / `B` | 출처 공급사. 공급사가 다르면 같은 호텔도 다른 숙소 |
+| `hotelCode` | string | 공급사 숙소 코드 (A `hotelCode`, B `propertyId`). 공급사 안에서만 유일 |
+| `hotelName` | string | 숙소명. 하루 1회 갱신 |
+| `roomTypes` | list | 객실 타입 목록 (① 숙소 목록에서만) |
+
+내부 숙소 식별자 `hotelId`(BIGINT)는 `hotel_mapping`이 배정한다.
+
+### 1.2 객실 타입 (`SupplierRoomType`)
+
+| 필드 | 타입 | 의미 |
+|---|---|---|
+| `roomTypeCode` | string | 공급사 객실 타입 코드 (A `roomTypeCode`, B `roomId`). 숙소 안에서만 유일 |
+| `roomTypeName` | string | 객실 타입명 |
+| `maxOccupancy` | int, null 허용 | 객실 1실 최대 수용 인원(성인 + 아동). 공급사가 주지 않으면 미상(null) |
+
+내부 객실 타입 식별자 `roomTypeId`는 `room_type_mapping`이 배정한다.
 
 ### 1.3 요금
-<!-- 필드, 타입, 의미, 계산 규칙 -->
+
+기준은 **세금 포함 총액(고객 결제 금액)**이다. B가 세금 금액을 따로 주지 않아 세금 별도 기준으로는 통일할 수 없다.
+
+| 필드 | 타입 | 의미 | 계산 |
+|---|---|---|---|
+| `totalPrice` (`SupplierRoomOffer`) | long | 요청 기간 총액, 세금 포함. 통화 최소 단위 정수 | A = Σ(nightlyRate + taxAmount), B = totalPrice |
+| `nightlyTotal` (`SupplierDailyOffer`, 캐시) | long | 그날 1박 요금, 세금 포함 | A = nightlyRate + taxAmount, B = 1박 호출의 totalPrice. 검색은 숙박일의 합 |
+| `currency` | string | ISO 4217 | 그대로 |
+| `breakfastIncluded` | boolean | 요금에 조식이 포함되는지 | 그대로. 같은 객실도 공급사마다 달라 비교 조건 |
+
+버리는 것: A의 날짜별 단가·세금 내역(총액으로 합쳐짐), B의 `taxIncluded`(항상 true).
 
 ### 1.4 재고
-<!-- 필드, 타입, 의미 -->
+
+| 필드 | 타입 | 의미 | 계산 |
+|---|---|---|---|
+| `remainingRooms` (`SupplierDailyOffer`, 캐시) | int | 그날 예약 가능한 객실 수 | 그대로 |
+| `availableRooms` (`SupplierRoomOffer`, 응답) | int | 요청 기간 전체를 예약할 수 있는 객실 수 | 기간 내 날짜별 재고의 최솟값. 0이면 예약 불가 |
+
+별도 boolean은 두지 않는다. 0을 응답에서 뺄지는 [README 5.4](../README.md).
 
 ## 2. 공급사 필드 대응
 
@@ -98,12 +131,12 @@ A-10023과 B77120은 실제로 같은 숙소이지만 공급사가 다르므로 
    - 사라짐 = `current − fetched` → `active=false`. 행은 삭제하지 않는다. 사라짐이 `current`의 절반(설정값 `mapping.sync.max-disappear-ratio`)을 넘으면 공급사 쪽 장애(목록이 잘려 옴)로 보고 비활성화만 보류하고 error 로그를 남긴다. 추가·변경은 반영한다.
    - 변경 = 교집합 중 이름·최대 인원이 다른 것 → 갱신.
 3. 숙소 델타를 반영한 뒤 객실 타입도 숙소별로 같은 방식으로 반영한다 (`(hotel_id, supplier_room_type_code)` 기준).
-4. (요금·재고 캐시가 있다면) 사라진 숙소·객실 타입의 캐시 키를 삭제한다. 웹 앱 인메모리는 크론잡이 건드리지 않고, 웹 앱이 매일 04:30에 DB를 다시 읽어 반영한다.
+4. 웹 앱 인메모리와 Redis 캐시는 크론잡이 건드리지 않는다. 웹 앱이 매일 04:30에 DB를 다시 읽어 반영하고, 사라진 숙소의 캐시 키는 인메모리에서 빠져 읽히지 않다가 TTL(15분)로 사라진다.
 5. 공급사별 추가·사라짐·변경 건수와 실패 여부를 로그에 남기고 종료한다.
 
 읽기
 - 웹 앱은 `active = true`인 매핑을 인메모리에 올려 두고, 검색은 인메모리에서 공급사별 숙소 코드 묶음을 만든다.
-- 인스턴스가 여러 대여도 갱신 잡은 CronJob 하나만 돌고, 각 인스턴스는 같은 시각에 같은 DB를 읽으므로 값이 같아진다. 인메모리 캐시는 매핑 하나뿐이고, 요금·재고는 Redis(설계만)가 맡는다.
+- 인스턴스가 여러 대여도 갱신 잡은 CronJob 하나만 돌고, 각 인스턴스는 같은 시각에 같은 DB를 읽으므로 값이 같아진다. 인메모리 캐시는 매핑 하나뿐이고, 요금·재고는 Redis 캐시(`cache` 패키지)가 맡는다.
 
 ### 3.3 식별자 규칙
 

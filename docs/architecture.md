@@ -3,7 +3,22 @@
 > 확정된 설계를 명세한다. 결정의 근거는 [README.md](../README.md) 4장, 결정 과정은 [JOURNAL.md](../JOURNAL.md)에 있다.
 
 ## 1. 전체 구성
-<!-- 구성도: 클라이언트 → 애플리케이션 → MySQL, Mock Supplier(A·B). 모듈, 포트, 호출 방향 -->
+
+```
+검색 클라이언트 ──HTTP──▶ 본 앱 (:8080, Spring MVC)
+                           │
+                           ├─ StaySearchService ──▶ Redis (:6379) 요금·재고 캐시 ─(값 없음·fresh=true)─▶ 공급사 어댑터 A·B
+                           ├─ MappingRegistry (인메모리 매핑) ◀── 기동 시·04:30 ── MySQL (:3306) hotel_mapping · room_type_mapping
+                           ├─ AvailabilityRefreshJob (기동 직후·5분마다) ──▶ 공급사 어댑터 A·B ──▶ Redis
+                           │
+                           └─ 공급사 어댑터 A·B ──WebClient (X-Api-Key, 1초/3초 타임아웃, 초당 4회)──▶ Mock Supplier (:9090)
+
+같은 이미지, sync 프로필 (K8s CronJob, 매일 04:00) ─ MappingSyncJob ──▶ 공급사 어댑터 A·B (숙소 목록) ──▶ MySQL (델타 저장) ──▶ 종료
+```
+
+- 호출 방향은 항상 본 앱 → 바깥이다. 공급사·MySQL·Redis는 본 앱을 호출하지 않는다.
+- 요금·재고는 Redis(TTL 있는 캐시)와 응답에만 있고 MySQL에는 매핑만 있다.
+- 검색이 공급사를 직접 부르는 것은 Redis에 값이 없는 숙소와 `fresh=true`뿐이다.
 
 ## 2. 모듈·패키지 구조
 
@@ -18,7 +33,20 @@
 - 한 저장소에 두는 이유는 같이 빌드·관리하고 평가자가 한 번에 받기 위해서다. 실행 시점에는 별개 프로세스다.
 
 ### 2.2 패키지
-<!-- 본 앱 패키지별 책임과 의존 방향 (구조 확정 후 기입) -->
+
+기능별로 나눈다. 계층별(controller/service/repository)로 나누면 공급사별 DTO가 한 폴더에 섞여 경계가 흐려진다.
+
+| 패키지 | 책임 | 의존하는 곳 |
+|---|---|---|
+| `supplier` | `SupplierClient` 인터페이스, `Supplier` enum, 설정(`SupplierProperties`), 공급사별 WebClient(`SupplierWebClients`), 호출 예산(`SupplierRateLimiter`), 실패 판정 통일(`FailureReason`, `SupplierCallException`, `SupplierFailures`), 묶음 처리(`ChunkedFetch`) | `stay` |
+| `supplier.a`, `supplier.b` | 공급사별 어댑터와 전용 응답 형식(package-private). 호출과 번역까지만 | `supplier`, `stay` |
+| `stay` | 어댑터 밖으로 나가는 표준 형태(`SupplierHotel`, `SupplierRoomType`, `SupplierRoomOffer`, `SupplierDailyOffer`, `AvailabilityQuery`, 결과 묶음) | 없음 |
+| `mapping` | 매핑 엔티티·MyBatis 매퍼, 크론잡(`MappingSyncJob`, `MappingSyncRunner`), 인메모리(`MappingRegistry`, `MappingRegistryLoader`) | `supplier`(인터페이스), `stay` |
+| `cache` | 요금·재고 캐시(`AvailabilityCache`, `CachedRate`)와 갱신 잡(`AvailabilityRefreshJob`) | `supplier`(인터페이스), `stay`, `mapping`(레지스트리) |
+| `search` | 검색 API(컨트롤러·서비스·요청·응답·오류 응답) | `supplier`(인터페이스), `stay`, `mapping`(레지스트리), `cache` |
+| `config` | 설정 바인딩과 빈 등록(`SupplierClientConfig`, `MappingConfig`, `CacheConfig`, `SchedulingConfig`) | 전부 |
+
+의존 방향은 `search`·`cache`·`mapping` → `supplier`(인터페이스)·`stay`이고, 공급사 구현 패키지(`supplier.a`, `supplier.b`)를 참조하는 곳은 `config`뿐이다(그마저도 스캔으로 찾는다). 새 공급사는 `supplier/c`를 더하면 되고 위 패키지는 바뀌지 않는다.
 
 ## 3. 유스케이스와 핵심 흐름
 
@@ -33,16 +61,16 @@
 ### 3.2 UC-1 매핑 생성·갱신
 
 - 목적: 공급사의 숙소·객실 타입 코드를 내부 식별자에 대응시켜 저장한다.
-- 트리거: <!-- 결정: 앱 기동 시 / 주기 / 별도 명령 -->
+- 트리거: 매일 04:00 Asia/Seoul에 K8s CronJob이 `sync` 프로필로 1회 실행(로컬은 `./gradlew :bootRun --args='--spring.profiles.active=sync'`). 웹 앱은 매핑을 만들지 않고 기동 시와 04:30에 DB에서 읽는다. 결정 근거는 README 5.2
 - 기본 흐름
   1. 공급사별 숙소 목록 API를 호출한다.
   2. 숙소마다 (공급사, 숙소 코드)에 대한 내부 숙소 식별자를 확보한다. 이미 있으면 재사용한다.
   3. 객실 타입마다 (공급사, 숙소 코드, 객실 타입 코드)에 대한 내부 객실 타입 식별자를 확보한다.
   4. 결과(공급사별 건수, 실패 여부)를 기록한다.
 - 대안 흐름
-  - A1 공급사 숙소 목록 조회 실패: <!-- 결정: 기존 매핑 유지 / 해당 공급사만 건너뜀 / 중단 -->
+  - A1 공급사 숙소 목록 조회 실패: 일시 장애는 고정 30초 × 3회 재시도, 그래도 실패면 해당 공급사만 건너뛰고 기존 매핑 유지. 잡은 종료 코드 1로 끝나 K8s가 재실행(backoffLimit 2)
   - A2 재실행: 같은 코드는 같은 내부 식별자로 돌아와야 한다.
-  - A3 공급사 목록에서 사라진 숙소: <!-- 결정: 유지 / 비활성 / 삭제 -->
+  - A3 공급사 목록에서 사라진 숙소: 비활성(`active=false`), 행은 삭제하지 않음. 직전 active의 절반 넘게 사라지면 공급사 쪽 장애로 보고 비활성화만 보류하고 알림
   - A4 동시 실행: 식별자가 중복 생성되지 않아야 한다.
 
 ### 3.3 UC-2 통합 검색
@@ -52,8 +80,8 @@
 - 사전 조건: 매핑이 저장되어 있다.
 - 기본 흐름
   1. 요청을 검증한다 (날짜 순서, 인원).
-  2. 매핑에서 보유 숙소를 조회해 공급사별 코드 묶음으로 나눈다 (요청당 숙소 수 상한 준수).
-  3. 공급사별 재고·요금 API를 병렬 호출한다 (연결·응답 타임아웃 적용).
+  2. 인메모리 매핑의 보유 숙소 전체에 대해 Redis에서 (객실 타입 × 숙박일) 값을 읽는다. 값이 있는 숙소는 여기서 끝난다.
+  3. 값이 없는 숙소(또는 `fresh=true`면 전부)만 공급사별 코드 묶음으로 나눠 재고·요금 API를 병렬 호출한다 (요청당 50개, 연결·응답 타임아웃, 호출 예산).
   4. 응답을 표준 모델로 정규화한다 (공급사별 실패 판정 포함).
   5. 요청 기간 전체의 예약 가능 객실 수를 판정한다.
   6. 공급사별 결과를 병합하고, 부분 실패 사실을 담아 응답한다.
@@ -61,20 +89,36 @@
   - A1 잘못된 요청 (체크아웃이 체크인보다 빠르거나 같음, 인원 0 등): 400 응답
   - A2 일부 공급사 장애 응답 (HTTP 4xx·5xx / HTTP 200 + 실패 코드): 해당 공급사를 제외하고 부분 실패로 표시
   - A3 일부 공급사 무응답: 타임아웃 뒤 A2와 같이 처리
-  - A4 모든 공급사 실패: <!-- 결정: 빈 결과 + 전체 실패 표시 / 오류 응답 -->
-  - A5 기간 중 하루라도 재고 0: 예약 불가 <!-- 결정: 응답에서 제외 / 0으로 노출 -->
+  - A4 모든 공급사 실패(캐시에서 읽은 숙소가 하나도 없을 때): 503 + `Retry-After: 5` + `failures`. 빈 200은 "예약 가능한 숙소 없음"으로 오해되므로 구분
+  - A5 기간 중 하루라도 재고 0: 예약 불가. 기본은 응답에서 제외, `includeSoldOut=true`면 `availableRooms: 0`으로 포함
   - A6 보유 숙소 없음 (매핑이 비어 있음): 빈 결과
-  - A7 응답 정규화 실패 (필드 누락, 형식 오류): <!-- 결정: 해당 항목 제외 / 공급사 실패로 처리 -->
+  - A7 응답 정규화 실패: 항목 하나의 필드 누락은 그 항목만 제외하고 로그(`maxOccupancy` 누락은 미상으로 살림). 본문 구조 자체가 깨졌으면(`items`/`data` 없음, 모르는 `resultCode`) 그 공급사의 실패(`INVALID_RESPONSE`)로 처리
+  - A9 Redis에 값이 없거나 Redis 장애: 값이 없는 숙소만(장애면 전부) 공급사 직접 호출(저하 모드), `fresh: true`로 표시. 갱신 잡의 마지막 시도가 실패한 공급사는 `failures`에 표시
   - A8 보유 숙소가 요청당 상한을 넘음: 묶음을 나눠 호출
 
-### 3.4 UC-3 Mock 모드 전환 (개발·검증용)
+### 3.4 UC-3 요금·재고 캐시 갱신
+
+- 목적: 검색이 공급사를 부르지 않고 응답하도록 오늘~+30일의 재고·요금을 Redis에 미리 채운다.
+- 트리거: 웹 앱 기동 직후, 그 뒤 5분마다(`cache.refresh-interval`).
+- 기본 흐름
+  1. 인메모리 매핑에서 공급사별 active 숙소 코드를 꺼낸다.
+  2. 어댑터의 날짜별 조회를 호출한다(A는 기간 한 번, B는 날짜마다 1박, adults=1). 50개 묶음·호출 예산 적용.
+  3. 공급사 코드를 내부 식별자로 바꿔 숙소당 Hash에 쓰고 TTL(주기 × 3)을 건다. 공급사별 상태 키에 성공 시각을 기록한다.
+- 대안 흐름
+  - A1 공급사 실패: 그 공급사만 건너뛰고 상태 키에 실패 원인·시각 기록. 값은 TTL까지 유지. 검색이 상태를 읽어 `failures`에 표시
+  - A2 묶음 일부 실패: 성공한 묶음만 쓰고 실패 묶음은 로그
+  - A3 매핑에 없는 코드: 버림. 다음 새벽 크론잡이 채우면 그때부터
+  - A4 Redis 쓰기 실패: 이번 바퀴 실패 로그, 다음 주기에 다시. 검색은 저하 모드
+  - A5 429: 백오프 뒤 그 공급사 예산을 절반으로
+
+### 3.5 UC-4 Mock 모드 전환 (개발·검증용)
 
 - 트리거: `POST /control/{supplier}/mode`
 - 흐름: 공급사별 모드(정상 / 장애 / 무응답)를 바꾼다. 재고·요금 API에만 적용된다.
 
-### 3.5 선택 유스케이스
+### 3.6 선택 유스케이스
 
-- 예약 대행 (선택 구현): 설계만 할 경우 여기에 흐름을 적는다.
+- 예약 대행, 중복 상품 병합, 통화 처리: 이번 범위 밖. 예약 직전 재확인은 `fresh=true`로 제공한다.
 
 ## 4. 공급사 연동
 
@@ -129,7 +173,7 @@ Flux.fromIterable(clients)
 |---|---|---|
 | 크론잡 (`MappingSyncJob`) | 건너뛰고 기존 매핑 유지, 결과에 원인 기록, 잡은 종료 코드 1 | 델타 반영 |
 | 검색 (직접 호출) | `failures: [{ supplier, reason }]`에 표시. 어댑터의 묶음 일부 실패는 실패한 묶음의 숙소 수도 함께 | 200으로 응답. 전부 실패면 503 + `Retry-After` |
-| Redis 갱신 잡 (설계) | 상태 키에 마지막 실패 원인·시각 기록. 값은 TTL까지 유지 | 검색이 상태 키를 읽어 `failures`에 `REFRESH_FAILED`로 표시 |
+| Redis 갱신 잡 (`AvailabilityRefreshJob`) | 상태 키에 마지막 실패 원인·시각 기록. 값은 TTL까지 유지 | 검색이 상태 키를 읽어 `failures`에 마지막 실패 원인으로 표시 |
 
 전체 지연은 가장 느린 공급사 하나(≤ 응답 타임아웃)다. 실패한 공급사가 다른 공급사를 늦추지 않는다.
 
@@ -150,7 +194,7 @@ Flux.fromIterable(clients)
 
 재시도 정책은 어댑터가 아니라 호출자가 정한다. 사람이 기다리는지에 따라 다르기 때문이다.
 
-| 원인 | 크론잡 (새벽, 사람 안 기다림) | 검색 직접 호출 (`fresh=true`, 사람 기다림) | Redis 갱신 잡 (설계) |
+| 원인 | 크론잡 (새벽, 사람 안 기다림) | 검색 직접 호출 (`fresh=true`·캐시 없음, 사람 기다림) | Redis 갱신 잡 (5분마다) |
 |---|---|---|---|
 | 연결 실패, 500, 503 | 고정 30초 × 3회 | 즉시 1회 (대기 0~200ms) | 다음 바퀴 |
 | 타임아웃 | 고정 30초 × 3회 | 없음 (이미 3초 소진) | 다음 바퀴 |
@@ -207,14 +251,14 @@ Flux.fromIterable(clients)
 | DB · 크론잡 | 잡 실패(종료 코드 1), K8s `backoffLimit`로 재실행 | error | 잡 실패 이벤트 |
 | DB · 웹 팟 기동 로드 | 기동 실패, readiness 안 올라감 → 롤아웃 중단 | error | 팟 CrashLoop·readiness 실패 |
 | DB · 웹 팟 04:30 리로드 | 기존 인메모리 유지, 5분 뒤 1회 재시도 | error | 리로드 실패 1건 이상 |
-| Redis · 갱신 잡 (설계) | 이번 바퀴 실패, 다음 주기에 다시 | error | 연속 2바퀴 실패 |
-| Redis · 검색 읽기 (설계) | 저하 모드(3초 예산 직접 호출 + `pending`) | warn | 저하 모드 진입 1건 이상 |
+| Redis · 갱신 잡 | 이번 바퀴 실패, 다음 주기에 다시 | error | 연속 2바퀴 실패 |
+| Redis · 검색 읽기 | 저하 모드(공급사 직접 호출) | warn | 저하 모드 진입 1건 이상 |
 
 **역할 구분**: 비율·추세·임계치는 모니터(예: Datadog), 정규화 실패·예상 못 한 예외처럼 한 건이라도 조사해야 하는 것은 예외 추적(예: Sentry)에 보낸다. 429는 정상 운영 상황이므로 예외로 보내지 않는다. 429 모니터의 알림은 갱신 잡의 초당 호출 횟수를 조정하는 신호로만 쓴다(4.8).
 
 ### 4.8 요금·재고 캐시 (선택)
 
-구현 상태: 구현(`cache/` 패키지). 갱신 잡 `AvailabilityRefreshJob`(웹 앱 스케줄, 기동 직후 + 5분마다), 저장소 `AvailabilityCache`(Redis Hash), 검색의 Redis 우선 읽기, 공급사별 호출 예산 `SupplierRateLimiter`. 설계만 남긴 것: 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트, 첫 바퀴와 readiness 연동, 팟 여러 대일 때 갱신 잡 리더 선출, 응답 예산 초과분의 `pending` 표시(필드는 있고 항상 비어 있음). 검토 과정은 [JOURNAL](../JOURNAL.md)의 "요금/재고 캐시" 항목에 있다.
+구현 상태: 구현(`cache/` 패키지). 갱신 잡 `AvailabilityRefreshJob`(웹 앱 스케줄, 기동 직후 + 5분마다), 저장소 `AvailabilityCache`(Redis Hash), 검색의 Redis 우선 읽기, 공급사별 호출 예산 `SupplierRateLimiter`. 설계만 남긴 것: 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트, 첫 바퀴와 readiness 연동, 팟 여러 대일 때 갱신 잡 리더 선출, 응답 예산 초과분을 `pending`으로 표시하는 부분 응답. 검토 과정은 [JOURNAL](../JOURNAL.md)의 "요금/재고 캐시" 항목에 있다.
 
 요구사항과의 관계: 요금·재고를 DB에 쌓지 않는다는 요구는 지킨다(캐시는 TTL이 있는 휘발성 저장이고 원본은 공급사). 안내 문서의 기본 흐름은 검색마다 공급사를 호출하는 것이고 캐시는 선택 구현(§3.3)이다. 우리는 검색 응답 시간(수 ms) 때문에 캐시를 주 경로로 두되, 검색 시점 직접 호출 경로(병렬·타임아웃·부분 실패·실패 판정 통일)는 `fresh=true`와 저하 모드에 그대로 남긴다. 갱신 잡도 같은 어댑터·견고성 코드를 쓴다.
 
@@ -230,11 +274,12 @@ Redis Hash  키: stay:v1:{hotelId}
 [갱신 잡]   5분마다: 인메모리 매핑의 공급사별 코드 50개 묶음 → 재고·요금 API(adults=1) → 정규화 → HSET 파이프라인 → 상태 키
             A: 묶음당 체크인 오늘·체크아웃 +30일 한 번 호출로 dailyRates 30일치
             B: 기간 총액만 주므로 묶음당 날짜마다 1박 호출(30회). 연박 요금은 1박 값의 합으로 근사
-[매일 04:00] 매핑 델타로 비활성 숙소 키 삭제, 지난 날짜 필드 HDEL, 날짜 창 전진
+[쓰기 규칙]  숙소 Hash 는 쓸 때마다 통째로 교체(MULTI: DEL → HSET → EXPIRE)하므로 지난 날짜·사라진 객실 타입 필드가 남지 않는다.
+            비활성 숙소 키는 인메모리 매핑에서 빠져 읽히지 않고 TTL 로 사라진다
 [검색]      숙소마다 HMGET {roomTypeId}:{date} × 숙박일 (파이프라인) → 객실 타입별 min 재고, Σ 요금 → 인원 필터 → 응답 (fresh=false)
             값이 없는 숙소(키 없음·필드 없음)만 공급사에 직접 묻는다. 상태 키의 마지막 시도가 실패면 failures 에 그 원인으로 표시
 [fresh=true] 예약 직전 재확인. Redis 를 건너뛰고 공급사에 직접 호출
-[저하 모드]  Redis 가 비었거나(첫 바퀴 전·초기화) 연결이 안 되면: 검색이 공급사를 직접 호출(fresh=true 로 표시). 응답 예산 3초는 공급사별 타임아웃이 맡고, 초과분의 pending 표시는 설계만. 알림
+[저하 모드]  Redis 가 비었거나(첫 바퀴 전·초기화) 연결이 안 되면: 검색이 공급사를 직접 호출(fresh=true 로 표시). 응답 예산 3초는 공급사별 타임아웃이 맡고, 초과분을 pending 으로 표시하는 부분 응답은 설계만. 알림
 [콜드 스타트] 갱신 잡 첫 바퀴가 끝나야 웹 팟 readiness 가 올라간다. 롤링 배포라 그동안은 이전 팟이 응답
 ```
 
@@ -247,7 +292,7 @@ Redis Hash  키: stay:v1:{hotelId}
 | 주기 | 5분(설정값). 요금 30분에 허용 오차 약 15%. 한 바퀴 호출 수 = A 묶음 수 + B 묶음 수 × 30. 숙소 1,000개면 620회 ÷ 4회/초 ≈ 2.6분으로 주기 안. 5,000개면 13분이라 날짜 거리별 계층(임박 5분, 먼 날짜 30~60분)이나 한도 협의가 필요하며 확장 설계로 남긴다 |
 | 주기 조정 | 갱신 시 값이 바뀐 비율을 재고·요금 따로, 공급사별로 기록. 5% 미만이면 주기를 늘리고 30% 초과면 줄이거나 예산 상향. `fresh=true` 결과와 캐시 값의 불일치율(목표: 요금 3% 이하, 있음→없음 1% 이하)이 정합성 오차의 실측치 |
 | 남은 객실이 적은 키 | 남은 객실 ≤ 2인 키는 예약 1건에 상태가 뒤집히므로 1분마다 다시 보는 핫 리스트를 둔다. 설계만 |
-| TTL | 주기의 3배. 만료 장치가 아니라 갱신 잡이 멈췄을 때 옛 값이 남지 않게 하는 안전장치 |
+| TTL | 주기의 3배. 만료 장치가 아니라 갱신 잡이 멈췄을 때 옛 값이 남지 않게 하는 안전장치. 비활성 숙소 키도 이 TTL 로 정리된다 |
 | 저하 모드 검산 (숙소 1,000개, 초당 4회) | 묶음 20개 ÷ 4 = 5초에 전부 복구. 응답 예산 3초에는 12묶음 = 600개 응답 + 400개 `pending`. 3초 안에 전부 채우려면 초당 8회가 필요하지만 예외 케이스라 4회 + 부분 응답으로 결정 |
 | 다중 인스턴스 | 갱신 잡은 팟 하나에서만 돈다(리더 선출 또는 별도 팟, 확장 설계). 검색은 모든 팟이 같은 Redis 를 읽는다 |
 | 설정값 | 허용 속도, 주기, 날짜 창, 응답 예산, 핫 리스트 기준은 설정으로 두고 변경 감지율·429 발생률을 보며 조정 |
@@ -336,4 +381,16 @@ spec:
 `concurrencyPolicy: Forbid`로 갱신 잡이 겹쳐 돌지 않게 한다. 앱 안의 재시도(고정 30초 × 3회)는 공급사 호출에만 걸고, DB 연결 실패처럼 앱 밖의 원인은 잡 수준 재실행이 맡는다. 잡 실패 이벤트와 마지막 성공 시각(25시간 초과)은 메트릭 모니터로 알린다(4.7).
 
 ## 7. 테스트 구성
-<!-- 테스트 종류별 범위, 사용하는 DB·Mock, 실행 명령 -->
+
+`./gradlew test` 하나로 전부 돈다. 자동 테스트는 Mock Supplier 모듈(9090)이나 compose의 DB·Redis에 의존하지 않고, 필요한 것을 테스트가 직접 띄운다(Docker 필요).
+
+| 층 | 대상 | 도구 | 테스트 |
+|---|---|---|---|
+| 단위 | 설정 바인딩, WebClient 구성, 인메모리 레지스트리·로더·러너, 검색 서비스의 병합·필터·부분 실패·재시도(어댑터는 가짜, 캐시는 mock) | JUnit, Mockito, AssertJ | `SupplierPropertiesTest`, `SupplierWebClientsTest`, `MappingRegistryTest`, `MappingRegistryLoaderTest`, `MappingSyncRunnerTest`, `StaySearchServiceTest` |
+| 어댑터 HTTP | 어댑터가 실제 HTTP로 호출·정규화·실패 판정 | WireMock (테스트 안에서 실행) | `SupplierAClientTest`, `SupplierBClientTest` |
+| 통합 (MySQL) | 매핑 upsert·식별자 안정성, 크론잡 델타·재시도·보류 | @SpringBootTest + Testcontainers MySQL 8.4 | `MappingMapperIntegrationTest`, `MappingSyncJobIntegrationTest` |
+| 통합 (Redis) | 캐시 쓰기·읽기·TTL·상태 키, 갱신 잡, 검색의 캐시 우선·저하 모드 | Testcontainers Redis 7.4 (테스트 JVM에서 컨테이너 하나 공유) | `AvailabilityCacheTest`, `AvailabilityRefreshJobTest`, `StaySearchServiceCacheTest` |
+| 웹 슬라이스 | 요청 파라미터·상태 코드·JSON 형태 | @WebMvcTest | `StaySearchControllerTest` |
+| 컨텍스트 | 기동 | @SpringBootTest (로컬 MySQL) | `StaySupplierIntegrationApplicationTests` |
+
+`@SpringBootTest`는 `cache.refresh-enabled=false`로 갱신 잡을 끈다. 결과와 시나리오는 [JOURNAL "테스트 전략과 결과"](../JOURNAL.md).
