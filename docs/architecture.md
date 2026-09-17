@@ -176,7 +176,7 @@ A는 HTTP 상태 코드로, B는 항상 200에 본문 `resultCode`로 실패를 
 키       stay:v1:{hotelId}              숙소당 Hash 하나. TTL = 주기 × 3 = 15분
 필드     {roomTypeId}:{yyyyMMdd}        값: 재고|세금 포함 1박 요금|통화|조식(0/1)|최대 인원(없으면 빈 칸)   예) 11:20260901 → 3|132000|KRW|0|2
          _refreshedAt                   마지막 갱신 시각
-상태 키  stay:v1:status:{supplier}      마지막 성공 시각, 마지막 실패 원인·시각
+상태 키  stay:v1:status:{supplier}      마지막 성공 시각, 마지막 실패 원인·시각. 갱신이 실패한 공급사를 검색이 failures 에 드러내기 위한 것
 ```
 
 - 갱신 잡: 5분마다 인메모리 매핑의 공급사별 코드를 50개씩 묶어 오늘부터 30일치를 받아요. A는 기간 한 번, B는 날짜마다 1박 호출이고 adults=1로 모든 객실 타입을 받아요. 숙소 Hash는 DEL → HSET → EXPIRE로 통째로 교체해서 지난 날짜 필드가 남지 않아요.
