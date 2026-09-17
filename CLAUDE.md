@@ -7,10 +7,11 @@
 ### 환경
 - JDK 21: mise로 관리한다 (`mise install`, 버전은 `mise.toml`에 고정).
 - 빌드 도구: Gradle Wrapper (`./gradlew`).
-- Docker: 로컬 MySQL 실행에 사용한다 (`compose.yaml`).
+- Docker: 로컬 MySQL·Redis 실행에 사용한다 (`compose.yaml`).
 
 ### 빌드·실행
-- `docker compose up -d` - MySQL 실행 (애플리케이션 실행 전에 필요)
+- `docker compose up -d` - MySQL + Redis 실행 (애플리케이션 실행 전에 필요)
+- `docker compose exec redis redis-cli FLUSHALL` - 요금·재고 캐시 비우기 (저하 모드 확인용)
 - `docker compose down` - MySQL 종료 (데이터는 `mysql-data` 볼륨에 유지)
 - `docker compose down -v` - MySQL 종료 + 데이터 삭제
 - 3306 포트가 이미 사용 중이면 `MYSQL_PORT=3307 docker compose up -d`, 애플리케이션은 `DB_PORT=3307`로 실행
@@ -53,6 +54,7 @@
 - `mapping/` - 매핑 엔티티, MyBatis 매퍼(XML은 `resources/mapper/`), `MappingSyncJob`(크론잡 델타), `MappingSyncRunner`(sync 프로필), `MappingRegistry`·`MappingRegistryLoader`(인메모리, 기동 시·04:30 로드)
 - `config/` - 설정 바인딩·빈 등록 (`SupplierClientConfig`, `MappingConfig`, `SchedulingConfig`)
 - `search/` - 통합 검색 API (`StaySearchController`, `StaySearchService`, 요청·응답·오류 응답)
+- `cache/` - 요금·재고 캐시 (`AvailabilityCache` Redis Hash, `AvailabilityRefreshJob` 5분 주기 미리 채우기, `CachedRate` 값 형식)
 
 ## Docs (작업 전에 해당 문서를 읽을 것)
 
@@ -79,7 +81,7 @@
 - 실제 외부 서비스는 호출하지 않는다. 공급사 호출 대상은 Mock Supplier뿐이다.
 
 ### 저장소
-- DB에는 공급사 코드 ↔ 내부 식별자 매핑만 저장한다. 요금과 재고는 저장하지 않는다.
+- DB에는 공급사 코드 ↔ 내부 식별자 매핑만 저장한다. 요금과 재고는 저장하지 않는다. 요금·재고는 Redis 캐시(TTL 있음)에만 두고 원본은 공급사다.
 - MyBatis 매퍼는 XML(`src/main/resources/mapper/*.xml`)로 작성한다. upsert·조건 갱신 SQL이 길어 애너테이션보다 읽기 편하다.
 
 ### 문서

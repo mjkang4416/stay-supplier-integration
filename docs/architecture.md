@@ -214,7 +214,7 @@ Flux.fromIterable(clients)
 
 ### 4.8 요금·재고 캐시 (선택)
 
-구현 상태: 설계 확정, 최소 구현 예정(단일 주기 스케줄 잡 + Redis 읽기). 검토 과정은 [JOURNAL](../JOURNAL.md)의 "요금/재고 캐시" 항목에 있다.
+구현 상태: 구현(`cache/` 패키지). 갱신 잡 `AvailabilityRefreshJob`(웹 앱 스케줄, 기동 직후 + 5분마다), 저장소 `AvailabilityCache`(Redis Hash), 검색의 Redis 우선 읽기, 공급사별 호출 예산 `SupplierRateLimiter`. 설계만 남긴 것: 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트, 첫 바퀴와 readiness 연동, 팟 여러 대일 때 갱신 잡 리더 선출, 응답 예산 초과분의 `pending` 표시(필드는 있고 항상 비어 있음). 검토 과정은 [JOURNAL](../JOURNAL.md)의 "요금/재고 캐시" 항목에 있다.
 
 요구사항과의 관계: 요금·재고를 DB에 쌓지 않는다는 요구는 지킨다(캐시는 TTL이 있는 휘발성 저장이고 원본은 공급사). 안내 문서의 기본 흐름은 검색마다 공급사를 호출하는 것이고 캐시는 선택 구현(§3.3)이다. 우리는 검색 응답 시간(수 ms) 때문에 캐시를 주 경로로 두되, 검색 시점 직접 호출 경로(병렬·타임아웃·부분 실패·실패 판정 통일)는 `fresh=true`와 저하 모드에 그대로 남긴다. 갱신 잡도 같은 어댑터·견고성 코드를 쓴다.
 
@@ -222,7 +222,7 @@ Flux.fromIterable(clients)
 
 ```
 Redis Hash  키: stay:v1:{hotelId}
-            필드: {roomTypeId}:{yyyyMMdd} → 재고|세금 포함 1박 요금|통화|조식(0/1)   예) 11:20260901 → 3|132000|KRW|0
+            필드: {roomTypeId}:{yyyyMMdd} → 재고|세금 포함 1박 요금|통화|조식(0/1)|최대 인원(없으면 빈 칸)   예) 11:20260901 → 3|132000|KRW|0|2
             필드: _refreshedAt → 마지막 갱신 시각
             날짜 창: 오늘 ~ +30일 · TTL = 주기 × 3 (안전장치)
 상태 키     stay:v1:status:{supplier} → 마지막 성공 시각, 마지막 실패 원인·시각
@@ -231,17 +231,17 @@ Redis Hash  키: stay:v1:{hotelId}
             A: 묶음당 체크인 오늘·체크아웃 +30일 한 번 호출로 dailyRates 30일치
             B: 기간 총액만 주므로 묶음당 날짜마다 1박 호출(30회). 연박 요금은 1박 값의 합으로 근사
 [매일 04:00] 매핑 델타로 비활성 숙소 키 삭제, 지난 날짜 필드 HDEL, 날짜 창 전진
-[검색]      숙소마다 HMGET {roomTypeId}:{date} × 숙박일 (파이프라인) → 객실 타입별 min 재고, Σ 요금 → 인원 필터 → 응답
-            상태 키의 실패는 failures 에 REFRESH_FAILED 로, _refreshedAt 이 주기 × 2 를 넘으면 stale 로 표시
+[검색]      숙소마다 HMGET {roomTypeId}:{date} × 숙박일 (파이프라인) → 객실 타입별 min 재고, Σ 요금 → 인원 필터 → 응답 (fresh=false)
+            값이 없는 숙소(키 없음·필드 없음)만 공급사에 직접 묻는다. 상태 키의 마지막 시도가 실패면 failures 에 그 원인으로 표시
 [fresh=true] 예약 직전 재확인. Redis 를 건너뛰고 공급사에 직접 호출
-[저하 모드]  Redis 가 비었을 때(장애·초기화)만: 검색이 응답 예산 3초 안에서 직접 호출, 채운 것만 응답하고 나머지는 pending. 알림
+[저하 모드]  Redis 가 비었거나(첫 바퀴 전·초기화) 연결이 안 되면: 검색이 공급사를 직접 호출(fresh=true 로 표시). 응답 예산 3초는 공급사별 타임아웃이 맡고, 초과분의 pending 표시는 설계만. 알림
 [콜드 스타트] 갱신 잡 첫 바퀴가 끝나야 웹 팟 readiness 가 올라간다. 롤링 배포라 그동안은 이전 팟이 응답
 ```
 
 | 항목 | 설계 |
 |---|---|
 | 캐시가 성립하는 조건 | 같은 키에 대한 검색이 변경보다 잦을 때. 키(객실 타입·날짜) 하나의 변경 간격은 요금 30분~2시간(RMS 제품 사양, 대리 지표), 재고 1.6~5시간(점유율·숙박일수·리드타임 역산). 인기 키의 검색은 분당 단위라 성립. 실측 데이터는 공개된 것이 없어 갱신 시 변경 감지율(재고·요금 따로)로 대체 |
-| 값의 기준 | 요금은 세금 포함 1박(A는 nightlyRate + taxAmount, B는 1박 호출의 totalPrice). B가 세금 금액을 주지 않아 세금 별도 기준으로는 통일할 수 없다. 재고 0도 저장한다(매진 판정용) |
+| 값의 기준 | 요금은 세금 포함 1박(A는 nightlyRate + taxAmount, B는 1박 호출의 totalPrice). B가 세금 금액을 주지 않아 세금 별도 기준으로는 통일할 수 없다. 재고 0도 저장한다(매진 판정용). 최대 인원도 같이 두어 검색이 ② 응답 값을 캐시에서도 쓴다 |
 | 키·자료구조 | 숙소당 Hash 하나. 키 수가 숙소 수와 같아 키 오버헤드가 작다. 값을 약 20B 구분자 문자열로 두어 필드 128개(객실 타입 4 × 31일) 이하면 listpack 압축. 숙소당 약 6KB, 10,000개 ≈ 60MB. 접두사 버전은 표준 모델 변경 배포 시 올림 |
 | 호출 예산 | 공급사당 초당 4회 시작(설정값), 상한 10회. 실제 공급사가 공개한 운영 한도(Hotelbeds 4회)에서 출발. 429를 받으면 로그·지표를 남기고 지수 백오프(1→2→4→…→60초, `Retry-After` 우선, 5회 초과면 이번 바퀴 포기) 후 예산을 절반으로 낮춰 재개. 올리는 것은 자동이 아니라 알림을 본 사람이 설정값으로 |
 | 주기 | 5분(설정값). 요금 30분에 허용 오차 약 15%. 한 바퀴 호출 수 = A 묶음 수 + B 묶음 수 × 30. 숙소 1,000개면 620회 ÷ 4회/초 ≈ 2.6분으로 주기 안. 5,000개면 13분이라 날짜 거리별 계층(임박 5분, 먼 날짜 30~60분)이나 한도 협의가 필요하며 확장 설계로 남긴다 |
@@ -266,13 +266,13 @@ Redis Hash  키: stay:v1:{hotelId}
 | 엔드포인트 | 역할 | 모드 적용 |
 |---|---|---|
 | `GET /a/v1/hotels` | Supplier A 숙소 목록 | 없음 |
-| `GET /a/v1/availability?hotelCodes=...` | Supplier A 재고·요금 | 있음 |
+| `GET /a/v1/availability?hotelCodes=...&checkIn=&checkOut=` | Supplier A 재고·요금 (날짜별 단가·세금 별도) | 있음 |
 | `GET /b/api/properties` | Supplier B 숙소 목록 | 없음 |
-| `GET /b/api/search?propertyIds=...` | Supplier B 재고·요금 | 있음 |
+| `GET /b/api/search?propertyIds=...&checkIn=&checkOut=` | Supplier B 재고·요금 (기간 총액·세금 포함) | 있음 |
 | `POST /control/{a\|b}/mode?value=...` | 공급사별 모드 전환 | - |
 
-- 응답 본문은 `src/main/resources/responses/*.json`의 고정 데이터이며 요청 파라미터는 무시한다.
-- 요청 파라미터 필터링, 요청당 숙소 수 상한 초과 오류, 응답 지연 모드, 숙소 목록 API 장애 모드는 필요해지면 추가한다.
+- 숙소 목록은 `src/main/resources/responses/*.json`의 고정 데이터다. 재고·요금은 요청한 `checkIn`~`checkOut`(체크아웃 미포함) 날짜마다 부록 예제의 3일 패턴(기준일 2026-09-01)을 반복해 만든다. 9/1~9/4를 요청하면 예제와 같은 값(A 429,000 / B 452,000)이고, 다른 날짜도 같은 패턴이라 캐시 값과 직접 호출 값이 일치한다. `hotelCodes`/`propertyIds`는 무시한다.
+- 요청당 숙소 수 상한 초과 오류, 응답 지연 모드, 숙소 목록 API 장애 모드는 필요해지면 추가한다.
 
 ### 5.3 모드
 
@@ -294,15 +294,15 @@ curl -X POST 'http://localhost:9090/control/a/mode?value=normal'        # A 복�
 ## 6. 실행 구성
 
 ### 6.1 로컬
-MySQL은 Docker, Mock Supplier는 별도 프로세스, 애플리케이션은 로컬 실행. 서버 Docker화는 하지 않는다.
+MySQL·Redis는 Docker, Mock Supplier는 별도 프로세스, 애플리케이션은 로컬 실행. 서버 Docker화는 하지 않는다.
 ```bash
-docker compose up -d                                          # MySQL
+docker compose up -d                                          # MySQL + Redis
 ./gradlew :mock-supplier:bootRun                              # Mock (9090)
 ./gradlew :bootRun --args='--spring.profiles.active=sync'     # 매핑 갱신 잡 1회 실행 후 종료 (종료 코드: 전부 성공 0, 공급사 실패 1)
 ./gradlew :bootRun                                            # 웹 앱 (8080). ':' 없이 실행하면 Mock 모듈까지 같이 뜬다
 ```
 
-sync 프로필은 `spring.main.web-application-type=none`으로 웹 서버 없이 뜨고, `MappingSyncRunner`가 잡을 돌린 뒤 `ExitCodeGenerator`로 종료 코드를 정한다. 웹 앱은 `MappingRegistryLoader`가 웹 서버가 뜨기 전에 DB에서 매핑을 올리고(실패하면 기동 실패), `mapping.reload.cron`(04:30 Asia/Seoul)에 다시 읽는다. 리로드 실패는 기존 인메모리를 유지하고 5분 뒤 한 번 더 시도한다.
+웹 앱은 기동 직후 갱신 잡이 오늘~+30일 요금·재고를 Redis에 채우고 5분마다 다시 채운다. Redis가 없으면 기동은 되고 검색은 저하 모드(직접 호출)로 동작한다. sync 프로필은 `spring.main.web-application-type=none`으로 웹 서버 없이 뜨고, `MappingSyncRunner`가 잡을 돌린 뒤 `ExitCodeGenerator`로 종료 코드를 정한다. 웹 앱은 `MappingRegistryLoader`가 웹 서버가 뜨기 전에 DB에서 매핑을 올리고(실패하면 기동 실패), `mapping.reload.cron`(04:30 Asia/Seoul)에 다시 읽는다. 리로드 실패는 기존 인메모리를 유지하고 5분 뒤 한 번 더 시도한다.
 
 ### 6.2 운영 (설계)
 같은 이미지를 두 워크로드로 배포한다.

@@ -83,12 +83,12 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 ├── build.gradle.kts                # 본 앱 빌드
 ├── settings.gradle.kts             # 모듈 등록
 ├── mise.toml                       # JDK 21 고정
-├── compose.yaml                    # 로컬 MySQL 8.4
+├── compose.yaml                    # 로컬 MySQL 8.4 + Redis 7.4
 ├── docker/mysql/conf.d/my.cnf      # MySQL 설정 (utf8mb4, UTC)
 ├── .claude/skills/                 # 반복 작업 스킬 (run-local, query-mapping, test-search-api, mock-fault)
 ├── src/                            # 본 애플리케이션 (:8080)
 └── mock-supplier/                  # Mock Supplier (:9090). 본 앱과 코드 참조 없음
-    └── src/main/resources/responses/   # 공급사 A·B 정상 응답 JSON
+    └── src/main/resources/responses/   # 공급사 A·B 숙소 목록 JSON (재고·요금은 요청 날짜대로 생성)
 ```
 
 패키지 구조는 [architecture.md 2장](docs/architecture.md)에 있다.
@@ -96,18 +96,19 @@ stay-supplier-integration/          # Gradle 멀티 모듈 루트
 ## 3. 빌드·실행
 
 ### 요구 사항
-- JDK 21 (`mise install`로 설치할 수 있다. 버전은 `mise.toml`에 고정)
-- Docker (로컬 MySQL 8.4 실행)
+- JDK 21. mise를 쓰면 저장소 루트에서 `mise trust && mise install`(버전은 `mise.toml`에 고정). 다른 JDK 21이 PATH에 있어도 된다
+- Docker (로컬 MySQL 8.4·Redis 7.4, 테스트의 Testcontainers)
+- 포트 8080(앱), 9090(Mock), 3306(MySQL), 6379(Redis). 충돌 시 변경 방법은 아래
 
 ### 실행
-터미널 세 개가 필요하다. MySQL은 Docker로, Mock Supplier와 애플리케이션은 각각 로컬 프로세스로 띄운다. 처음 띄울 때는 매핑 테이블이 비어 있으므로 3번(매핑 갱신 잡)을 한 번 돌려 공급사 숙소 목록을 DB에 넣은 뒤 애플리케이션을 띄운다.
+터미널 세 개가 필요하다. MySQL·Redis는 Docker로, Mock Supplier와 애플리케이션은 각각 로컬 프로세스로 띄운다. 처음 띄울 때는 매핑 테이블이 비어 있으므로 3번(매핑 갱신 잡)을 한 번 돌려 공급사 숙소 목록을 DB에 넣은 뒤 애플리케이션을 띄운다.
 ```bash
-docker compose up -d                                        # 1. MySQL (Docker)
+docker compose up -d                                        # 1. MySQL + Redis (Docker)
 ./gradlew :mock-supplier:bootRun                            # 2. Mock Supplier (포트 9090, 별도 터미널)
 ./gradlew :bootRun --args='--spring.profiles.active=sync'   # 3. 매핑 갱신 잡 1회 실행 후 종료 (처음 한 번, 이후는 크론잡 역할)
 ./gradlew :bootRun                                          # 4. 애플리케이션 (포트 8080)
 ```
-`bootRun` 앞의 `:`는 루트 모듈만 실행한다는 뜻이다. `:` 없이 `./gradlew bootRun`을 치면 Mock 모듈의 bootRun까지 같이 실행된다. 3번은 공급사 하나라도 실패하면 종료 코드 1로 끝난다.
+`bootRun` 앞의 `:`는 루트 모듈만 실행한다는 뜻이다. `:` 없이 `./gradlew bootRun`을 치면 Mock 모듈의 bootRun까지 같이 실행된다. 3번은 공급사 하나라도 실패하면 종료 코드 1로 끝난다. 4번은 기동 직후 갱신 잡이 오늘부터 30일치 요금·재고를 Redis에 채우고(약 10초), 그 뒤 5분마다 다시 채운다.
 - `./gradlew build`: 컴파일 + 테스트
 - API 문서(Swagger UI): http://localhost:8080/swagger-ui.html
 - Mock Supplier 상세: [architecture.md 5장](docs/architecture.md)
@@ -124,21 +125,28 @@ docker compose up -d                                        # 1. MySQL (Docker)
 | 타임존 | UTC |
 | 데이터 | `mysql-data` 볼륨에 유지, 초기화는 `docker compose down -v` |
 
+### 로컬 Redis
+redis:7.4-alpine, 포트 6379(충돌 시 `REDIS_PORT`로 변경). 요금·재고 캐시만 담고 볼륨은 없다. 상태를 보려면 `docker compose exec redis redis-cli KEYS 'stay:v1:*'`, 비우려면 `docker compose exec redis redis-cli FLUSHALL`. Redis가 없어도 애플리케이션은 뜨고 검색은 공급사를 직접 부르는 저하 모드로 동작한다.
+
 ### 동작 확인
-Mock의 예제 데이터(9/1~9/4, 성인 2)로 정상 → 부분 실패 → 타임아웃 → 전부 실패를 순서대로 본다. 8080이 사용 중이면 `./gradlew :bootRun --args='--server.port=8081'`로 띄우고 아래 포트를 바꾼다.
+Mock은 요청한 날짜 범위대로 부록 예제의 3일 패턴을 반복해 응답한다(9/1~9/4를 요청하면 예제와 같은 값). 캐시 창은 오늘부터 30일이므로 캐시 동작을 보려면 그 안의 날짜를 쓴다. 아래는 2026-09-20~23 기준이고, 지났으면 내일부터 3박으로 바꾼다(macOS `date -v+1d +%F`, Linux `date -d '+1 day' +%F`). 창 밖 날짜(예: 2026-09-01~04)도 검색은 되지만 캐시 없이 직접 호출한다. 8080이 사용 중이면 `./gradlew :bootRun --args='--server.port=8081'`로 띄우고 포트를 바꾼다.
 ```bash
-Q='http://localhost:8080/api/v1/stays/search?checkIn=2026-09-01&checkOut=2026-09-04&adults=2&children=0'
-curl -s "$Q"                                                            # 1. 정상: Riverside A·B 두 건. Namsan은 9/2 재고 0이라 제외
-curl -s -X POST 'http://localhost:9090/control/a/mode?value=error'      # 2. Supplier A 장애
+Q='http://localhost:8080/api/v1/stays/search?checkIn=2026-09-20&checkOut=2026-09-23&adults=2&children=0'
+curl -s "$Q"                                                            # 1. 캐시 적중: "fresh": false, 수 ms. Riverside A(429,000)·B(452,000). Namsan은 하루 재고 0이라 제외
+docker compose exec redis redis-cli FLUSHALL                             # 2. 캐시를 비운다 (TTL 만료·Redis 초기화와 같은 상태)
+curl -s "$Q"                                                            #    저하 모드: "fresh": true, 공급사 직접 호출, 같은 값
+curl -s -X POST 'http://localhost:9090/control/a/mode?value=error'      # 3. Supplier A 장애 (캐시가 비어 있으니 검색이 직접 호출)
 curl -s "$Q"                                                            #    200 + failures: [{ "supplier": "A", "reason": "UNAVAILABLE" }], B 결과만
-curl -s -X POST 'http://localhost:9090/control/a/mode?value=no-response' # 3. Supplier A 무응답
+curl -s -X POST 'http://localhost:9090/control/a/mode?value=no-response' # 4. Supplier A 무응답
 curl -s "$Q"                                                            #    3초 뒤 200 + failures: [{ "supplier": "A", "reason": "TIMEOUT" }]
-curl -s -X POST 'http://localhost:9090/control/b/mode?value=error'      # 4. B도 장애 → 전부 실패
+curl -s -X POST 'http://localhost:9090/control/b/mode?value=error'      # 5. B도 장애 → 전부 실패
 curl -s -i "$Q"                                                         #    503 + Retry-After: 5
-curl -s -X POST 'http://localhost:9090/control/a/mode?value=normal'     # 5. 복구
+curl -s -X POST 'http://localhost:9090/control/a/mode?value=normal'     # 6. 복구. 다음 갱신 바퀴(최대 5분)부터 다시 캐시 적중
 curl -s -X POST 'http://localhost:9090/control/b/mode?value=normal'
-curl -s "$Q&includeSoldOut=true"                                        # 6. 예약 불가(Namsan, availableRooms 0)도 포함
+curl -s "$Q&includeSoldOut=true"                                        # 7. 예약 불가(Namsan, availableRooms 0)도 포함
+curl -s "$Q&fresh=true"                                                 # 8. 캐시가 있어도 공급사에 직접 묻는다 (예약 직전 재확인)
 ```
+캐시가 차 있는 상태에서 A를 장애로 두고 5분 기다리면 갱신 잡이 A 상태 키에 실패를 기록하고, 캐시 응답에도 `failures: [{ "supplier": "A", "reason": "UNAVAILABLE" }]`가 붙는다(A 값은 TTL 15분까지 유지).
 
 ## 4. 구현 범위
 
@@ -151,7 +159,7 @@ curl -s "$Q&includeSoldOut=true"                                        # 6. 예
 | Mock Supplier | 구현 (정상·장애·무응답 모드) | [architecture.md](docs/architecture.md) |
 | 연동 지표·모니터링 설계 (권장) | 설계만 (지표 정의, Micrometer → Datadog 전송 방식, 알림 규칙, 한도 탐색 절차). 코드에는 실패 로그만 | [architecture.md](docs/architecture.md) |
 | 재시도·서킷 브레이커 (선택, Resilience4j) | 재시도는 구현(크론잡 고정 간격, 검색 즉시 1회). 서킷 브레이커는 설계만 | [architecture.md](docs/architecture.md) |
-| 요금/재고 캐시 전략 (선택) | 설계 확정, 최소 구현 예정. 관리형 Redis 공유 캐시에 5분 주기로 미리 채우고 검색은 Redis만 읽음. 공급사당 초당 4회 시작(상한 10회), 429는 로그 + 지수 백오프 후 절반 | [architecture.md](docs/architecture.md) |
+| 요금/재고 캐시 전략 (선택) | 구현 (Redis 미리 채우기 5분 주기·창 30일, 검색은 Redis 우선, 비었으면 직접 호출, 공급사당 초당 4회 예산과 429 감속, TTL 주기×3, 상태 키). 날짜 거리별 주기·핫 리스트·리더 선출·readiness 연동은 설계만 | [architecture.md](docs/architecture.md) |
 <!-- 그 밖의 선택 구현은 진행한 항목만 추가: 상태는 구현 / 설계만 / 미구현 -->
 
 ## 5. 설계 의사결정과 근거
@@ -209,7 +217,7 @@ curl -s "$Q&includeSoldOut=true"                                        # 6. 예
 - 자세히: [stay-model.md 3장](docs/stay-model.md)
 
 #### 요금·재고 캐시 (선택, 설계만)
-- 선택: 목표 구조는 상시 운영하는 관리형 Redis 공유 캐시다. 갱신 잡이 인메모리 매핑의 공급사별 코드 묶음(50개)으로 재고·요금 API를 호출해 정규화한 값을 숙소당 Hash(`stay:v1:{hotelId}`, 필드 `{roomTypeId}:{yyyyMMdd}`)에 올리고, 검색은 Redis만 읽어 날짜 범위를 조립한다. A는 30일 범위 한 번 호출로 날짜별 값을 받지만, B는 요청 기간의 총액만 주므로 날짜마다 1박으로 호출해 그날 값으로 저장하고 연박 요금은 1박 값의 합으로 계산한다. 예약 직전에는 캐시를 쓰지 않고 공급사에 실시간 재확인한다. 호출 속도는 공급사당 초당 4회 시작(공개된 운영 한도, 상한 10회), 429는 로그 + 지수 백오프 후 절반으로 재개, 갱신 주기는 5분(숙소가 늘면 날짜 거리별 계층으로 확장)이다. 캐시가 비었을 때(Redis 장애)만 검색이 3초 예산 안에서 직접 호출하고 나머지는 `pending`으로 표시한다. 요금·재고는 DB에 저장하지 않는다.
+- 선택: Redis 공유 캐시에 미리 채운다(구현). 웹 앱의 갱신 잡이 5분마다 인메모리 매핑의 공급사별 코드 묶음(50개)으로 재고·요금 API를 호출해 정규화한 값을 숙소당 Hash(`stay:v1:{hotelId}`, 필드 `{roomTypeId}:{yyyyMMdd}`, 값 `재고|세금 포함 1박|통화|조식|최대 인원`)에 올리고, 검색은 Redis를 먼저 읽어 날짜 범위를 조립한다. A는 30일 범위 한 번 호출로 날짜별 값을 받지만, B는 요청 기간의 총액만 주므로 날짜마다 1박으로 호출해 그날 값으로 저장하고 연박 요금은 1박 값의 합으로 계산한다. 예약 직전에는 캐시를 쓰지 않고 공급사에 실시간 재확인한다. 호출 속도는 공급사당 초당 4회(공개된 운영 한도, 토큰 버킷, 429면 절반), 갱신 주기는 5분, TTL은 주기 × 3이다. 값이 없는 숙소(첫 바퀴 전·창 밖 날짜·Redis 장애)만 검색이 직접 호출한다. 요금·재고는 DB에 저장하지 않는다. 설계만 남긴 것: 날짜 거리별 주기 계층, 남은 객실 ≤ 2 핫 리스트, 첫 바퀴와 readiness 연동, 팟 여러 대일 때 갱신 잡 리더 선출, 3초 예산 초과분의 `pending` 표시.
 - 근거: 인스턴스가 여러 대면 인스턴스별 캐시는 효과가 희석되고 공급사 호출이 인스턴스 수만큼 늘어난다. 키 하나의 변경 간격(요금 30분~2시간, 재고 1.6~5시간)이 인기 키의 검색 간격(분 단위)보다 길어 캐시가 성립한다([도메인 리서치 4장](docs/domain-research.md)).
 - 잃는 것: 갱신 주기만큼 옛 값을 보여줄 수 있고, B의 연박 요금은 연박 할인이 있으면 실제와 다를 수 있다. 둘 다 검색 결과를 참고값으로 두고 예약 직전 재확인으로 흡수한다. 이번 제출에서는 Redis를 띄우지 않고 검색이 그 자리에서 공급사를 직접 호출한다.
 - 자세히: [architecture.md 4.8](docs/architecture.md)

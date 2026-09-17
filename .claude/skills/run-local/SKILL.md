@@ -7,10 +7,10 @@ description: 로컬에서 MySQL(Docker)·Mock Supplier·애플리케이션을 �
 
 터미널 세 개를 쓴다. 명령은 모두 저장소 루트에서 실행한다.
 
-1. MySQL
+1. MySQL + Redis
    ```bash
    docker compose up -d
-   docker compose ps    # stay-supplier-mysql 이 healthy 인지 확인
+   docker compose ps    # stay-supplier-mysql, stay-supplier-redis 가 healthy 인지 확인
    ```
    3306이 사용 중이면 `MYSQL_PORT=3307 docker compose up -d`, 애플리케이션은 `DB_PORT=3307`로 실행한다.
 2. Mock Supplier (별도 터미널, 포트 9090)
@@ -27,7 +27,7 @@ description: 로컬에서 MySQL(Docker)·Mock Supplier·애플리케이션을 �
    ```bash
    ./gradlew :bootRun
    ```
-   8080이 사용 중이면 `./gradlew :bootRun --args='--server.port=8081'`.
+   8080이 사용 중이면 `./gradlew :bootRun --args='--server.port=8081'`. 기동 직후 갱신 잡이 오늘~+30일 요금·재고를 Redis에 채운다(로그 `cache refresh supplier=A hotels=2 …`, 약 10초).
 
 주의: `bootRun` 앞의 `:`를 빼면 Mock 모듈의 bootRun까지 같이 실행된다.
 
